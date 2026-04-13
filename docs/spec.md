@@ -6,9 +6,9 @@
 - Contract status: locked for scaffold and CRUD foundation
 - Scaffold status: bootstrapped in this repository
 - Vault dev status: linked into the live `totocaster` vault for real-time testing
-- Current implementation status: file-backed metrics view, record parsing, validation, and missing-id migration are working; CRUD is not implemented yet
+- Current implementation status: file-backed metrics view, record parsing, validation, missing-id migration, and current-file CRUD are working
 - File browser status: `*.metrics.ndjson` files are routed into the plugin view and sidebar labels are normalized to logical metric dataset names
-- Next implementation phase: record-level CRUD and `id` migration support for legacy files
+- Next implementation phase: multi-file browsing, richer record navigation, and higher-level views
 
 ## Product
 
@@ -150,6 +150,7 @@ Unknown units are warnings, not fatal errors.
 - Obsidian plugin shell
 - file-backed metrics view for `*.metrics.ndjson`
 - file browser integration for compound metrics extensions
+- current-file create, update, and delete flows for metrics rows
 - settings for metrics root, supported extensions, default write file, and reference prefix
 - direct file reads and writes via Obsidian APIs
 - in-memory working state only
@@ -179,7 +180,8 @@ The display name omits "Obsidian" to stay aligned with common community plugin n
 - The current file view parses live rows, validates them, and surfaces file-level and row-level diagnostics
 - The current vault data is legacy relative to the v1 contract because rows use `origin_id` but not `id`
 - The plugin can now assign missing ULIDs to a current metrics file so legacy rows can move into the v1 contract
-- The next meaningful milestone is record-level mutation flows once stable ids exist
+- The plugin can now append, edit, and delete records in the current metrics file once rows have stable ids
+- The next meaningful milestone is moving beyond single-file CRUD into richer browsing and views
 
 ## Open questions
 

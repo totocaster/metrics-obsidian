@@ -54,7 +54,13 @@ function renderIssueList(container: HTMLElement, row: ParsedMetricRow): void {
   });
 }
 
-function renderRecord(container: HTMLElement, row: ParsedMetricRow, referencePrefix: string): void {
+function renderRecord(
+  container: HTMLElement,
+  row: ParsedMetricRow,
+  plugin: MetricsPlugin,
+  file: TFile,
+  referencePrefix: string,
+): void {
   const rowEl = container.createDiv({ cls: ["metrics-lens-record", `is-${row.status}`] });
 
   const header = rowEl.createDiv({ cls: "metrics-lens-record-header" });
@@ -84,6 +90,25 @@ function renderRecord(container: HTMLElement, row: ParsedMetricRow, referencePre
 
   if (typeof row.metric?.note === "string" && row.metric.note.length > 0) {
     rowEl.createDiv({ cls: "metrics-lens-record-note", text: row.metric.note });
+  }
+
+  if (row.metric?.id && row.metric.ts && row.metric.key && typeof row.metric.value === "number" && row.metric.source) {
+    const actions = rowEl.createDiv({ cls: "metrics-lens-actions" });
+
+    const editButton = actions.createEl("button", { text: "Edit" });
+    editButton.setAttribute("aria-label", `Edit ${row.metric.key}`);
+    editButton.addEventListener("click", () => {
+      plugin.openEditRecordModal(file, row.metric as import("./contract").MetricRecord);
+    });
+
+    const deleteButton = actions.createEl("button", {
+      cls: "mod-warning",
+      text: "Delete",
+    });
+    deleteButton.setAttribute("aria-label", `Delete ${row.metric.key}`);
+    deleteButton.addEventListener("click", () => {
+      plugin.confirmDeleteRecord(file, row.metric as import("./contract").MetricRecord);
+    });
   }
 
   renderIssueList(rowEl, row);
@@ -202,6 +227,20 @@ export class MetricsFileView extends TextFileView {
       text: `Reference example: ${toMetricReference("01JRX9Y7T9TQ8Q3A91F1M7A4AA", this.plugin.settings.recordReferencePrefix)}`,
     });
 
+    const createRow = filePanel.createDiv({ cls: "metrics-lens-actions" });
+    const createButton = createRow.createEl("button", {
+      cls: "mod-cta",
+      text: "Add record",
+    });
+    createButton.setAttribute("aria-label", "Add a metrics record to this file");
+    createButton.addEventListener("click", () => {
+      if (!this.file) {
+        return;
+      }
+
+      this.plugin.openCreateRecordModal(this.file);
+    });
+
     if (analysis.legacyRows > 0) {
       const legacyPanel = container.createDiv({ cls: "metrics-lens-panel" });
       legacyPanel.createEl("h2", { text: "Legacy ids" });
@@ -265,7 +304,7 @@ export class MetricsFileView extends TextFileView {
 
     const recordsList = recordsPanel.createDiv({ cls: "metrics-lens-records" });
     analysis.rows.forEach((row) => {
-      renderRecord(recordsList, row, this.plugin.settings.recordReferencePrefix);
+      renderRecord(recordsList, row, this.plugin, this.file as TFile, this.plugin.settings.recordReferencePrefix);
     });
   }
 }

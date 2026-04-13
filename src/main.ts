@@ -1,8 +1,17 @@
 import { FileView, Notice, Plugin, TFile, WorkspaceLeaf } from "obsidian";
 
-import { assignMissingIdsToMetricsData } from "./metrics-file-mutation";
+import { MetricRecordModal } from "./metric-record-modal";
+import {
+  appendMetricRecordToMetricsData,
+  assignMissingIdsToMetricsData,
+  deleteMetricRecordFromMetricsData,
+  MetricsMutationError,
+  type MetricRecordInput,
+  updateMetricRecordInMetricsData,
+} from "./metrics-file-mutation";
 import { DEFAULT_SETTINGS, MetricsPluginSettings, MetricsSettingTab, normalizeMetricsSettings } from "./settings";
 import { logicalMetricsBaseName, METRICS_VIEW_TYPE, MetricsFileView } from "./view";
+import type { MetricRecord } from "./contract";
 
 export default class MetricsPlugin extends Plugin {
   settings: MetricsPluginSettings = DEFAULT_SETTINGS;
@@ -49,6 +58,23 @@ export default class MetricsPlugin extends Plugin {
 
         if (!checking) {
           void this.assignMissingIds(file);
+        }
+
+        return true;
+      },
+    });
+
+    this.addCommand({
+      id: "add-record-current-file",
+      name: "Add record to current metrics file",
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file || !this.isMetricsFile(file)) {
+          return false;
+        }
+
+        if (!checking) {
+          this.openCreateRecordModal(file);
         }
 
         return true;
@@ -184,6 +210,102 @@ export default class MetricsPlugin extends Plugin {
         : `Assigned ${assigned} ids.`,
     );
     this.refreshOpenMetricsViews();
+  }
+
+  openCreateRecordModal(file: TFile): void {
+    const modal = new MetricRecordModal(
+      this.app,
+      {
+        submitLabel: "Add record",
+        title: `Add record to ${logicalMetricsBaseName(file.name, this.settings.supportedExtensions)}`,
+      },
+      (recordInput) => {
+        void this.createRecord(file, recordInput);
+      },
+    );
+    modal.open();
+  }
+
+  openEditRecordModal(file: TFile, record: MetricRecord): void {
+    const modal = new MetricRecordModal(
+      this.app,
+      {
+        initialRecord: record,
+        submitLabel: "Save record",
+        title: `Edit ${record.key}`,
+      },
+      (recordInput) => {
+        void this.updateRecord(file, record.id, recordInput);
+      },
+    );
+    modal.open();
+  }
+
+  async createRecord(file: TFile, recordInput: MetricRecordInput): Promise<void> {
+    try {
+      let createdId = "";
+
+      await this.app.vault.process(file, (data) => {
+        const result = appendMetricRecordToMetricsData(data, recordInput);
+        createdId = result.record.id;
+        return result.content;
+      });
+
+      new Notice(`Added metrics record ${createdId}.`);
+      this.refreshOpenMetricsViews();
+    } catch (error) {
+      this.handleMutationError(error);
+    }
+  }
+
+  async updateRecord(file: TFile, recordId: string, recordInput: MetricRecordInput): Promise<void> {
+    try {
+      await this.app.vault.process(file, (data) => {
+        const result = updateMetricRecordInMetricsData(data, recordId, recordInput);
+        return result.content;
+      });
+
+      new Notice(`Updated metrics record ${recordId}.`);
+      this.refreshOpenMetricsViews();
+    } catch (error) {
+      this.handleMutationError(error);
+    }
+  }
+
+  async deleteRecord(file: TFile, recordId: string): Promise<void> {
+    try {
+      await this.app.vault.process(file, (data) => {
+        const result = deleteMetricRecordFromMetricsData(data, recordId);
+        return result.content;
+      });
+
+      new Notice(`Deleted metrics record ${recordId}.`);
+      this.refreshOpenMetricsViews();
+    } catch (error) {
+      this.handleMutationError(error);
+    }
+  }
+
+  confirmDeleteRecord(file: TFile, record: MetricRecord): void {
+    if (!window.confirm(`Delete ${record.key} (${record.id}) from ${file.name}?`)) {
+      return;
+    }
+
+    void this.deleteRecord(file, record.id);
+  }
+
+  private handleMutationError(error: unknown): void {
+    if (error instanceof MetricsMutationError) {
+      new Notice(error.message);
+      return;
+    }
+
+    if (error instanceof Error) {
+      new Notice(error.message);
+      return;
+    }
+
+    new Notice("Metrics mutation failed.");
   }
 
   private suppressAutoOpenForPath(path: string): void {
