@@ -67,6 +67,16 @@
   background-color: var(--background-modifier-hover);
 }
 
+.metrics-lens-record.is-targeted {
+  background-color: var(--background-modifier-hover);
+  box-shadow: inset 2px 0 0 var(--interactive-accent);
+}
+
+.metrics-lens-record:focus-visible {
+  outline: 2px solid var(--background-modifier-border-focus);
+  outline-offset: -2px;
+}
+
 .metrics-lens-record-time {
   text-align: right;
   color: var(--text-muted);

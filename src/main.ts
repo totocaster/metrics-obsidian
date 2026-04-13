@@ -1,6 +1,13 @@
-import { FileView, Notice, Plugin, TFile, WorkspaceLeaf } from "obsidian";
+import { Editor, FileView, MarkdownView, Notice, Plugin, TFile, TFolder, WorkspaceLeaf } from "obsidian";
 
+import {
+  extractMetricIdFromText,
+  findMetricIdAtOffset,
+  type MetricRecord,
+} from "./contract";
+import { MetricReferenceModal } from "./metric-reference-modal";
 import { MetricRecordModal } from "./metric-record-modal";
+import { analyzeMetricsData, type ParsedMetricRow } from "./metrics-file-model";
 import {
   appendMetricRecordToMetricsData,
   assignMissingIdsToMetricsData,
@@ -11,7 +18,11 @@ import {
 } from "./metrics-file-mutation";
 import { DEFAULT_SETTINGS, MetricsPluginSettings, MetricsSettingTab, normalizeMetricsSettings } from "./settings";
 import { logicalMetricsBaseName, METRICS_VIEW_TYPE, MetricsFileView } from "./view";
-import type { MetricRecord } from "./contract";
+
+interface ResolvedMetricReference {
+  file: TFile;
+  row: ParsedMetricRow;
+}
 
 export default class MetricsPlugin extends Plugin {
   settings: MetricsPluginSettings = DEFAULT_SETTINGS;
@@ -86,6 +97,31 @@ export default class MetricsPlugin extends Plugin {
       name: "Open metrics view",
       callback: async () => {
         await this.activateView();
+      },
+    });
+
+    this.addCommand({
+      id: "open-reference",
+      name: "Open metric reference",
+      callback: () => {
+        this.openMetricReferenceModal();
+      },
+    });
+
+    this.addCommand({
+      id: "open-reference-under-cursor",
+      name: "Open metric reference under cursor",
+      editorCheckCallback: (checking, editor) => {
+        const metricId = this.metricIdFromEditor(editor);
+        if (!metricId) {
+          return false;
+        }
+
+        if (!checking) {
+          void this.openMetricReference(metricId);
+        }
+
+        return true;
       },
     });
 
@@ -310,6 +346,39 @@ export default class MetricsPlugin extends Plugin {
     });
   }
 
+  openMetricReferenceModal(initialValue?: string): void {
+    const selection = initialValue ?? this.selectedMetricReferenceText();
+    const modal = new MetricReferenceModal(this.app, { initialValue: selection }, (value) => {
+      void this.openMetricReference(value);
+    });
+    modal.open();
+  }
+
+  async openMetricReference(value: string): Promise<void> {
+    const metricId = extractMetricIdFromText(value, this.settings.recordReferencePrefix);
+    if (!metricId) {
+      new Notice("Metric reference must look like `metric:<id>` or a raw ULID.");
+      return;
+    }
+
+    const resolved = await this.resolveMetricReference(metricId);
+    if (!resolved) {
+      return;
+    }
+
+    const targetLeaf = this.metricReferenceLeaf(resolved.file);
+    await this.openMetricsFile(resolved.file, targetLeaf);
+
+    const view = targetLeaf?.view;
+    if (view instanceof MetricsFileView) {
+      view.focusMetricRecord(metricId);
+    }
+
+    if (targetLeaf) {
+      this.app.workspace.revealLeaf(targetLeaf);
+    }
+  }
+
   private handleMutationError(error: unknown): void {
     if (error instanceof MetricsMutationError) {
       new Notice(error.message);
@@ -322,6 +391,61 @@ export default class MetricsPlugin extends Plugin {
     }
 
     new Notice("Metrics mutation failed.");
+  }
+
+  private metricIdFromEditor(editor: Editor): string | null {
+    const selection = editor.getSelection();
+    if (selection.trim().length > 0) {
+      return extractMetricIdFromText(selection, this.settings.recordReferencePrefix);
+    }
+
+    const cursor = editor.getCursor();
+    const line = editor.getLine(cursor.line);
+    return findMetricIdAtOffset(line, cursor.ch, this.settings.recordReferencePrefix);
+  }
+
+  private selectedMetricReferenceText(): string {
+    const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!markdownView) {
+      return "";
+    }
+
+    return markdownView.editor.getSelection().trim();
+  }
+
+  private async resolveMetricReference(metricId: string): Promise<ResolvedMetricReference | null> {
+    const metricsFiles = this.metricsFilesInScope();
+    if (metricsFiles.length === 0) {
+      new Notice(`No metrics files were found under ${this.settings.metricsRoot}.`);
+      return null;
+    }
+
+    const matches: ResolvedMetricReference[] = [];
+
+    for (const file of metricsFiles) {
+      const data = await this.app.vault.cachedRead(file);
+      const analysis = analyzeMetricsData(data);
+
+      analysis.rows.forEach((row) => {
+        if (row.metric?.id === metricId) {
+          matches.push({ file, row });
+        }
+      });
+    }
+
+    if (matches.length === 0) {
+      new Notice(`Metric reference ${metricId} was not found.`);
+      return null;
+    }
+
+    if (matches.length > 1) {
+      new Notice(
+        `Metric reference ${metricId} matched ${matches.length} records. Resolve duplicate ids before using references.`,
+      );
+      return null;
+    }
+
+    return matches[0] ?? null;
   }
 
   private suppressAutoOpenForPath(path: string): void {
@@ -356,6 +480,48 @@ export default class MetricsPlugin extends Plugin {
       path &&
         this.settings.supportedExtensions.some((extension) => path.endsWith(extension)),
     );
+  }
+
+  private metricsFilesInScope(): TFile[] {
+    const root = this.app.vault.getAbstractFileByPath(this.settings.metricsRoot);
+    if (!(root instanceof TFolder)) {
+      return [];
+    }
+
+    return this.collectMetricsFiles(root);
+  }
+
+  private collectMetricsFiles(folder: TFolder): TFile[] {
+    const files: TFile[] = [];
+
+    folder.children.forEach((child) => {
+      if (child instanceof TFile) {
+        if (this.isMetricsFile(child)) {
+          files.push(child);
+        }
+        return;
+      }
+
+      if (child instanceof TFolder) {
+        files.push(...this.collectMetricsFiles(child));
+      }
+    });
+
+    return files;
+  }
+
+  private metricReferenceLeaf(file: TFile): WorkspaceLeaf | null {
+    const existingFileLeaf = this.findLeafShowingFile(file);
+    if (existingFileLeaf) {
+      return existingFileLeaf;
+    }
+
+    const existingMetricsLeaf = this.app.workspace.getLeavesOfType(METRICS_VIEW_TYPE)[0];
+    if (existingMetricsLeaf) {
+      return existingMetricsLeaf;
+    }
+
+    return this.app.workspace.getRightLeaf(false) ?? this.app.workspace.activeLeaf;
   }
 
   private async maybeAutoOpenFile(file: TFile | null, leaf: WorkspaceLeaf | null): Promise<void> {

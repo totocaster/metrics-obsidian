@@ -202,6 +202,10 @@ function renderRecord(
   const rowEl = container.createDiv({
     cls: row.status === "valid" ? "metrics-lens-record" : ["metrics-lens-record", `is-${row.status}`],
   });
+  rowEl.tabIndex = -1;
+  if (typeof row.metric?.id === "string") {
+    rowEl.dataset.metricId = row.metric.id;
+  }
   if (options.isFirst) {
     rowEl.addClass("is-first");
   }
@@ -288,6 +292,8 @@ function renderRecord(
 
 export class MetricsFileView extends TextFileView {
   allowNoFile = true;
+  private clearTargetedRecordTimeout: number | null = null;
+  private pendingMetricIdFocus: string | null = null;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -326,6 +332,13 @@ export class MetricsFileView extends TextFileView {
     this.render();
   }
 
+  async onClose(): Promise<void> {
+    if (this.clearTargetedRecordTimeout !== null) {
+      window.clearTimeout(this.clearTargetedRecordTimeout);
+      this.clearTargetedRecordTimeout = null;
+    }
+  }
+
   clear(): void {
     this.data = "";
     this.render();
@@ -347,6 +360,11 @@ export class MetricsFileView extends TextFileView {
   }
 
   refreshView(): void {
+    this.render();
+  }
+
+  focusMetricRecord(metricId: string): void {
+    this.pendingMetricIdFocus = metricId;
     this.render();
   }
 
@@ -426,5 +444,37 @@ export class MetricsFileView extends TextFileView {
         void this.plugin.assignMissingIds(this.file);
       });
     }
+
+    this.revealPendingMetricRecord();
+  }
+
+  private revealPendingMetricRecord(): void {
+    if (!this.pendingMetricIdFocus) {
+      return;
+    }
+
+    const targetId = this.pendingMetricIdFocus;
+    const targetEl = this.contentEl.querySelector<HTMLElement>(`[data-metric-id="${targetId}"]`);
+    if (!targetEl) {
+      return;
+    }
+
+    this.pendingMetricIdFocus = null;
+
+    targetEl.addClass("is-targeted");
+    targetEl.scrollIntoView({
+      block: "center",
+      behavior: "smooth",
+    });
+    targetEl.focus({ preventScroll: true });
+
+    if (this.clearTargetedRecordTimeout !== null) {
+      window.clearTimeout(this.clearTargetedRecordTimeout);
+    }
+
+    this.clearTargetedRecordTimeout = window.setTimeout(() => {
+      targetEl.removeClass("is-targeted");
+      this.clearTargetedRecordTimeout = null;
+    }, 1800);
   }
 }

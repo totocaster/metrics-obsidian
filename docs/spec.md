@@ -2,13 +2,15 @@
 
 ## Status
 
-- Overall status: draft v0.1
-- Contract status: locked for scaffold and CRUD foundation
-- Scaffold status: bootstrapped in this repository
+- Overall status: active v0.1 development
+- Contract status: locked for the current file-first metrics phase
+- Scaffold status: complete in this repository
 - Vault dev status: linked into the live `totocaster` vault for real-time testing
-- Current implementation status: file-backed metrics view, record parsing, validation, missing-id migration, and current-file CRUD are working
+- Scope status: contract, scaffold, and current-file metrics lens are implemented
+- Current implementation status: file-backed metrics timeline view, record parsing, validation, missing-id migration, current-file CRUD, and metric reference resolution are working
 - File browser status: `*.metrics.ndjson` files are routed into the plugin view and sidebar labels are normalized to logical metric dataset names
-- Next implementation phase: metrics file management, cross-file navigation, and higher-level views
+- UI status: compact timeline layout, newest-first ordering, row action menu, and optional metric icons are implemented
+- Next implementation phase: file management plus filtering, sorting, and grouping for viewing
 
 ## Product
 
@@ -151,7 +153,7 @@ Unknown units are warnings, not fatal errors.
 - file-backed metrics view for `*.metrics.ndjson`
 - file browser integration for compound metrics extensions
 - current-file create, update, and delete flows for metrics rows
-- settings for metrics root, supported extensions, default write file, and reference prefix
+- settings for metrics root, supported extensions, default write file, reference prefix, and metric icons
 - direct file reads and writes via Obsidian APIs
 - in-memory working state only
 
@@ -181,10 +183,58 @@ The display name omits "Obsidian" to stay aligned with common community plugin n
 - The current vault data is legacy relative to the v1 contract because rows use `origin_id` but not `id`
 - The plugin can now assign missing ULIDs to a current metrics file so legacy rows can move into the v1 contract
 - The plugin can now append, edit, and delete records in the current metrics file once rows have stable ids
-- The next meaningful milestone is managing metrics files themselves and improving cross-file navigation
+- The current file view is rendered as a compact timeline with minimal default Obsidian styling
+- Records are sorted newest-first by default using `ts`
+- Metric icons can be shown in timeline markers and are enabled by default when the icon exists in Obsidian
+- Record actions are available from a minimal `...` menu for copy, edit, and delete operations
+- The plugin can now resolve `metric:<id>` or raw ULIDs from command input or editor text and open the owning file
+- Metric reference resolution focuses and highlights the matching record in the metrics view
+- The current phase is substantially complete; the next meaningful milestone is moving from current-file CRUD into richer viewing controls and file-management workflows
+
+## Viewing plan
+
+### Filtering
+
+1. Add lightweight current-view filters first.
+   Start with metric key, source, validation status, and free-text search across note, origin id, and source.
+2. Add date range filtering next.
+   Keep it file-first and derived from `ts` or `date`; do not introduce saved queries or indexing yet.
+3. Keep filters local to the open view.
+   Filters should change presentation only, never mutate files.
+
+### Sorting
+
+1. Keep newest-first as the default.
+   This is the right baseline for append-oriented metric files and is already implemented.
+2. Add a small sort menu rather than per-column controls.
+   Support at least oldest-first, newest-first, key A-Z, and value high-low / low-high.
+3. Apply sorting after filtering.
+   That keeps the mental model simple and predictable.
+
+### Grouping
+
+1. Start with no grouping as the default.
+   The current timeline stays the simplest presentation.
+2. Add a small set of semantic groups.
+   Recommended first groups: day, key, and source.
+3. Keep groups collapsible.
+   Grouping should help scanning large files without turning the view into a dashboard.
+4. Apply grouping after filtering and sorting.
+   Filter -> sort -> group is the cleanest pipeline for a file lens.
+
+## Recommended next work
+
+1. Add metrics file management.
+   Create new metrics files and support rename/delete from the plugin. The record lens is working; file lifecycle is the next missing layer.
+2. Implement lightweight current-view filtering.
+   Ship key, source, status, text, and date range first.
+3. Add a compact sort/group control.
+   Keep the controls minimal and local to the current view.
+4. Add cross-file record navigation.
+   Provide a search/open flow by `id`, `origin_id`, `key`, or source across the metrics root without introducing a hidden database.
 
 ## Open questions
 
 - whether `origin_id` should be globally unique or only unique within `(source, origin_id)`
 - whether delete should gain a future tombstone mode instead of physical removal
-- whether legacy records without `id` should get an explicit migration command
+- whether a future reference workflow should open records in place, in a side pane, or in a command-palette picker
