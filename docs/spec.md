@@ -6,9 +6,9 @@
 - Contract status: locked for scaffold and CRUD foundation
 - Scaffold status: bootstrapped in this repository
 - Vault dev status: linked into the live `totocaster` vault for real-time testing
-- Current implementation status: file-backed metrics workspace, multi-file browsing, record parsing, validation, missing-id migration, and current-file CRUD are working
+- Current implementation status: file-backed metrics view, record parsing, validation, missing-id migration, and current-file CRUD are working
 - File browser status: `*.metrics.ndjson` files are routed into the plugin view and sidebar labels are normalized to logical metric dataset names
-- Next implementation phase: metrics file management, broader cross-file navigation, and higher-level views
+- Next implementation phase: metrics file management, cross-file navigation, and higher-level views
 
 ## Product
 
@@ -20,7 +20,7 @@ The plugin is a metrics-only tool. It is not a Hypercontext client, does not own
 
 1. Contract
 2. Scaffold
-3. Lens over `*.metrics.ndjson` files with read, validation, current-file CRUD, and multi-file browsing
+3. Lens over `*.metrics.ndjson` files with read, validation, and current-file CRUD
 
 ## Out of scope for this phase
 
@@ -150,7 +150,6 @@ Unknown units are warnings, not fatal errors.
 - Obsidian plugin shell
 - file-backed metrics view for `*.metrics.ndjson`
 - file browser integration for compound metrics extensions
-- multi-file metrics browser scoped to the configured metrics root
 - current-file create, update, and delete flows for metrics rows
 - settings for metrics root, supported extensions, default write file, and reference prefix
 - direct file reads and writes via Obsidian APIs
@@ -182,7 +181,6 @@ The display name omits "Obsidian" to stay aligned with common community plugin n
 - The current vault data is legacy relative to the v1 contract because rows use `origin_id` but not `id`
 - The plugin can now assign missing ULIDs to a current metrics file so legacy rows can move into the v1 contract
 - The plugin can now append, edit, and delete records in the current metrics file once rows have stable ids
-- The plugin now includes an internal multi-file browser over the configured metrics root
 - The next meaningful milestone is managing metrics files themselves and improving cross-file navigation
 
 ## Open questions

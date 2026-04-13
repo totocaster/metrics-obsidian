@@ -7,6 +7,7 @@ export interface MetricsPluginSettings {
   supportedExtensions: string[];
   defaultWriteFile: string;
   recordReferencePrefix: string;
+  showMetricIcons: boolean;
 }
 
 export const DEFAULT_SETTINGS: MetricsPluginSettings = {
@@ -14,6 +15,7 @@ export const DEFAULT_SETTINGS: MetricsPluginSettings = {
   supportedExtensions: [".metrics.ndjson"],
   defaultWriteFile: "Metrics/All.metrics.ndjson",
   recordReferencePrefix: "metric:",
+  showMetricIcons: true,
 };
 
 export function normalizeMetricsSettings(
@@ -23,11 +25,11 @@ export function normalizeMetricsSettings(
     ? settings.supportedExtensions
     : DEFAULT_SETTINGS.supportedExtensions;
 
-  return {
-    metricsRoot: normalizePath(settings.metricsRoot ?? DEFAULT_SETTINGS.metricsRoot),
-    supportedExtensions: Array.from(
-      new Set(
-        supportedExtensions
+    return {
+      metricsRoot: normalizePath(settings.metricsRoot ?? DEFAULT_SETTINGS.metricsRoot),
+      supportedExtensions: Array.from(
+        new Set(
+          supportedExtensions
           .map((value) => value.trim())
           .filter((value) => value.length > 0),
       ),
@@ -35,6 +37,7 @@ export function normalizeMetricsSettings(
     defaultWriteFile: normalizePath(settings.defaultWriteFile ?? DEFAULT_SETTINGS.defaultWriteFile),
     recordReferencePrefix:
       settings.recordReferencePrefix?.trim() || DEFAULT_SETTINGS.recordReferencePrefix,
+    showMetricIcons: settings.showMetricIcons ?? DEFAULT_SETTINGS.showMetricIcons,
   };
 }
 
@@ -113,6 +116,20 @@ export class MetricsSettingTab extends PluginSettingTab {
         text.onChange(async (value) => {
           this.plugin.settings.recordReferencePrefix =
             value.trim() || DEFAULT_SETTINGS.recordReferencePrefix;
+          await this.plugin.saveSettings();
+          this.plugin.refreshOpenMetricsViews();
+        });
+      });
+
+    new Setting(containerEl).setName("Appearance").setHeading();
+
+    new Setting(containerEl)
+      .setName("Show metric icons")
+      .setDesc("Show mapped Lucide icons next to metrics when the icon exists in Obsidian.")
+      .addToggle((toggle) => {
+        toggle.setValue(this.plugin.settings.showMetricIcons);
+        toggle.onChange(async (value) => {
+          this.plugin.settings.showMetricIcons = value;
           await this.plugin.saveSettings();
           this.plugin.refreshOpenMetricsViews();
         });

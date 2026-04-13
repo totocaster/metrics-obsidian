@@ -187,17 +187,6 @@ export default class MetricsPlugin extends Plugin {
     this.queueFileExplorerLabelSync();
   }
 
-  listMetricsFiles(): TFile[] {
-    return this.app.vault
-      .getFiles()
-      .filter((file) => this.isMetricsFile(file) && this.isMetricsRootPath(file.path))
-      .sort((left, right) => left.path.localeCompare(right.path));
-  }
-
-  isFileInMetricsRoot(file: TFile): boolean {
-    return this.isMetricsRootPath(file.path);
-  }
-
   async assignMissingIds(file: TFile): Promise<void> {
     let assigned = 0;
     let skipped = 0;
@@ -502,12 +491,4 @@ export default class MetricsPlugin extends Plugin {
     });
   }
 
-  private isMetricsRootPath(path: string): boolean {
-    const metricsRoot = this.settings.metricsRoot.trim();
-    if (metricsRoot.length === 0) {
-      return true;
-    }
-
-    return path === metricsRoot || path.startsWith(`${metricsRoot}/`);
-  }
 }

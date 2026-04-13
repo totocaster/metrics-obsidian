@@ -1,8 +1,9 @@
-import { TFile, TextFileView, WorkspaceLeaf } from "obsidian";
+import { Menu, Notice, setIcon, TFile, TextFileView, WorkspaceLeaf } from "obsidian";
 
 import { toMetricReference, type MetricRecord } from "./contract";
 import type MetricsPlugin from "./main";
-import { analyzeMetricsData, type MetricIssueSeverity, type MetricRowStatus, type ParsedMetricRow } from "./metrics-file-model";
+import { metricIconForKey } from "./metric-icons";
+import { analyzeMetricsData, type ParsedMetricRow } from "./metrics-file-model";
 
 export const METRICS_VIEW_TYPE = "metrics-file-view";
 
@@ -23,38 +24,74 @@ function capitalizeDisplayName(value: string): string {
   return `${value.slice(0, 1).toUpperCase()}${value.slice(1)}`;
 }
 
-function createStatusBadge(container: HTMLElement, text: string, status: MetricIssueSeverity | MetricRowStatus): void {
-  container.createSpan({
-    cls: ["metrics-lens-badge", `is-${status}`],
-    text,
-  });
-}
-
-function formatMetricValue(row: ParsedMetricRow): string {
+function formatMetricValue(row: ParsedMetricRow): string | null {
   const value = row.metric?.value;
   const unit = row.metric?.unit;
 
   if (typeof value !== "number") {
-    return "Unknown value";
+    return null;
   }
 
   return typeof unit === "string" ? `${value} ${unit}` : `${value}`;
 }
 
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
-  }
-
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+function isEditableRecord(metric: Partial<MetricRecord> | null): metric is MetricRecord {
+  return Boolean(
+    metric &&
+      typeof metric.id === "string" &&
+      typeof metric.ts === "string" &&
+      typeof metric.key === "string" &&
+      typeof metric.value === "number" &&
+      Number.isFinite(metric.value) &&
+      typeof metric.source === "string",
+  );
 }
 
-function formatModifiedAt(timestamp: number): string {
-  return new Date(timestamp).toLocaleString();
+function formatTimelineTime(row: ParsedMetricRow): string {
+  const ts = row.metric?.ts;
+  if (typeof ts !== "string") {
+    return "--:--";
+  }
+
+  const parsed = Date.parse(ts);
+  if (Number.isNaN(parsed)) {
+    return "--:--";
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(parsed);
+}
+
+function formatTimelineDate(row: ParsedMetricRow): string {
+  if (typeof row.metric?.date === "string") {
+    return row.metric.date;
+  }
+
+  const ts = row.metric?.ts;
+  if (typeof ts !== "string") {
+    return "";
+  }
+
+  const parsed = Date.parse(ts);
+  if (Number.isNaN(parsed)) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+  }).format(parsed);
+}
+
+async function copyText(label: string, value: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(value);
+    new Notice(`Copied ${label}.`);
+  } catch {
+    new Notice(`Could not copy ${label}.`);
+  }
 }
 
 function renderIssueList(container: HTMLElement, row: ParsedMetricRow): void {
@@ -64,10 +101,91 @@ function renderIssueList(container: HTMLElement, row: ParsedMetricRow): void {
 
   const issuesList = container.createEl("ul", { cls: "metrics-lens-issues" });
   row.issues.forEach((issue) => {
-    const item = issuesList.createEl("li");
-    createStatusBadge(item, issue.severity, issue.severity);
-    item.createSpan({ text: issue.message });
+    issuesList.createEl("li", {
+      cls: `is-${issue.severity}`,
+      text: `${issue.severity === "warning" ? "Warning" : "Error"}: ${issue.message}`,
+    });
   });
+}
+
+function openRecordMenu(
+  event: MouseEvent,
+  row: ParsedMetricRow,
+  plugin: MetricsPlugin,
+  file: TFile,
+  referencePrefix: string,
+): void {
+  const menu = new Menu();
+  let hasItems = false;
+
+  if (typeof row.metric?.id === "string") {
+    hasItems = true;
+    menu.addItem((item) => {
+      item.setTitle("Copy metric reference").setIcon("copy").onClick(() => {
+        void copyText("metric reference", toMetricReference(row.metric!.id!, referencePrefix));
+      });
+    });
+
+    menu.addItem((item) => {
+      item.setTitle("Copy id").setIcon("copy").onClick(() => {
+        void copyText("id", row.metric!.id!);
+      });
+    });
+  }
+
+  if (typeof row.metric?.origin_id === "string") {
+    hasItems = true;
+    menu.addItem((item) => {
+      item.setTitle("Copy origin id").setIcon("copy").onClick(() => {
+        void copyText("origin id", row.metric!.origin_id!);
+      });
+    });
+  }
+
+  if (typeof row.metric?.source === "string") {
+    hasItems = true;
+    menu.addItem((item) => {
+      item.setTitle("Copy source").setIcon("copy").onClick(() => {
+        void copyText("source", row.metric!.source!);
+      });
+    });
+  }
+
+  if (row.rawLine.trim().length > 0) {
+    hasItems = true;
+    menu.addItem((item) => {
+      item.setTitle("Copy raw line").setIcon("copy").onClick(() => {
+        void copyText("raw line", row.rawLine);
+      });
+    });
+  }
+
+  if (isEditableRecord(row.metric)) {
+    const metric = row.metric;
+
+    if (hasItems) {
+      menu.addSeparator();
+    }
+
+    menu.addItem((item) => {
+      item.setTitle("Edit").setIcon("pencil").onClick(() => {
+        plugin.openEditRecordModal(file, metric);
+      });
+    });
+
+    menu.addItem((item) => {
+      item.setTitle("Delete").setIcon("trash").onClick(() => {
+        plugin.confirmDeleteRecord(file, metric);
+      });
+    });
+    hasItems = true;
+  }
+
+  if (!hasItems) {
+    return;
+  }
+
+  menu.showAtMouseEvent(event);
 }
 
 function renderRecord(
@@ -76,146 +194,96 @@ function renderRecord(
   plugin: MetricsPlugin,
   file: TFile,
   referencePrefix: string,
+  options: {
+    isFirst: boolean;
+    isLast: boolean;
+  },
 ): void {
-  const rowEl = container.createDiv({ cls: ["metrics-lens-record", `is-${row.status}`] });
-
-  const header = rowEl.createDiv({ cls: "metrics-lens-record-header" });
-  header.createSpan({ cls: "metrics-lens-record-line", text: `Line ${row.lineNumber}` });
-  createStatusBadge(header, row.status, row.status);
-
-  const title = row.metric?.key ?? "Invalid metrics row";
-  rowEl.createEl("h3", { cls: "metrics-lens-record-title", text: title });
-
-  const facts = rowEl.createDiv({ cls: "metrics-lens-record-facts" });
-  facts.createSpan({ text: row.metric?.date ?? row.metric?.ts ?? "Unknown timestamp" });
-  facts.createSpan({ text: formatMetricValue(row) });
-  facts.createSpan({ text: row.metric?.source ?? "Unknown source" });
-
-  const references = rowEl.createDiv({ cls: "metrics-lens-record-references" });
-  if (typeof row.metric?.id === "string") {
-    references.createSpan({
-      text: toMetricReference(row.metric.id, referencePrefix),
-    });
-  } else {
-    references.createSpan({ text: "No metric:id reference yet" });
+  const rowEl = container.createDiv({
+    cls: row.status === "valid" ? "metrics-lens-record" : ["metrics-lens-record", `is-${row.status}`],
+  });
+  if (options.isFirst) {
+    rowEl.addClass("is-first");
+  }
+  if (options.isLast) {
+    rowEl.addClass("is-last");
   }
 
-  if (typeof row.metric?.origin_id === "string") {
-    references.createSpan({ text: `origin_id: ${row.metric.origin_id}` });
+  const timeEl = rowEl.createDiv({ cls: "metrics-lens-record-time" });
+  timeEl.createSpan({
+    cls: "metrics-lens-record-time-primary",
+    text: formatTimelineTime(row),
+  });
+
+  const secondaryTime = formatTimelineDate(row);
+  if (secondaryTime.length > 0) {
+    timeEl.createSpan({
+      cls: "metrics-lens-record-time-secondary",
+      text: secondaryTime,
+    });
+  }
+
+  const body = rowEl.createDiv({ cls: "metrics-lens-record-body" });
+  const marker = body.createSpan({ cls: "metrics-lens-record-marker" });
+  const iconId =
+    plugin.settings.showMetricIcons && typeof row.metric?.key === "string"
+      ? metricIconForKey(row.metric.key)
+      : null;
+  if (iconId) {
+    marker.setAttribute("aria-hidden", "true");
+    try {
+      setIcon(marker, iconId);
+      if (marker.querySelector("svg")) {
+        marker.addClass("has-icon");
+        body.addClass("has-icon-marker");
+      }
+    } catch {
+      marker.empty();
+    }
+  }
+
+  const main = body.createDiv({ cls: "metrics-lens-record-main" });
+  main.createSpan({
+    cls: "metrics-lens-record-key",
+    text: row.metric?.key ?? "Invalid row",
+  });
+
+  const metricValue = formatMetricValue(row);
+  if (metricValue) {
+    main.createSpan({
+      cls: "metrics-lens-record-value",
+      text: metricValue,
+    });
   }
 
   if (typeof row.metric?.note === "string" && row.metric.note.length > 0) {
-    rowEl.createDiv({ cls: "metrics-lens-record-note", text: row.metric.note });
-  }
-
-  if (row.metric?.id && row.metric.ts && row.metric.key && typeof row.metric.value === "number" && row.metric.source) {
-    const actions = rowEl.createDiv({ cls: "metrics-lens-actions" });
-
-    const editButton = actions.createEl("button", { text: "Edit" });
-    editButton.type = "button";
-    editButton.setAttribute("aria-label", `Edit ${row.metric.key}`);
-    editButton.addEventListener("click", () => {
-      plugin.openEditRecordModal(file, row.metric as MetricRecord);
-    });
-
-    const deleteButton = actions.createEl("button", {
-      cls: "mod-warning",
-      text: "Delete",
-    });
-    deleteButton.type = "button";
-    deleteButton.setAttribute("aria-label", `Delete ${row.metric.key}`);
-    deleteButton.addEventListener("click", () => {
-      plugin.confirmDeleteRecord(file, row.metric as MetricRecord);
+    body.createDiv({
+      cls: "metrics-lens-record-note",
+      text: row.metric.note,
     });
   }
 
-  renderIssueList(rowEl, row);
+  renderIssueList(body, row);
 
   if (!row.metric?.key) {
-    rowEl.createEl("pre", { cls: "metrics-lens-record-raw", text: row.rawLine });
-  }
-}
-
-function renderBrowser(
-  container: HTMLElement,
-  plugin: MetricsPlugin,
-  files: TFile[],
-  selectedFile: TFile | null,
-  leaf: WorkspaceLeaf,
-): void {
-  const browserPanel = container.createDiv({ cls: ["metrics-lens-panel", "metrics-lens-browser"] });
-  browserPanel.createEl("h2", { text: "Metrics files" });
-
-  const browserSummary = browserPanel.createEl("ul");
-  browserSummary.createEl("li", { text: `Metrics root: ${plugin.settings.metricsRoot}` });
-  browserSummary.createEl("li", { text: `Files in scope: ${files.length}` });
-  browserSummary.createEl("li", {
-    text: selectedFile ? `Selected: ${selectedFile.path}` : "Selected: none",
-  });
-
-  if (files.length === 0) {
-    browserPanel.createEl("p", {
-      text: "No metrics files were found under the configured metrics root.",
+    body.createEl("pre", {
+      cls: "metrics-lens-record-raw",
+      text: row.rawLine,
     });
-    return;
   }
 
-  const browserList = browserPanel.createDiv({ cls: "metrics-lens-browser-list" });
-  files.forEach((file) => {
-    const isSelected = selectedFile?.path === file.path;
-    const button = browserList.createEl("button", {
-      cls: ["metrics-lens-file-button", isSelected ? "is-selected" : ""],
-    });
-    button.type = "button";
-    button.setAttribute(
-      "aria-label",
-      `Open ${logicalMetricsBaseName(file.name, plugin.settings.supportedExtensions)} metrics file`,
-    );
-    button.addEventListener("click", () => {
-      void plugin.openMetricsFile(file, leaf);
-    });
-
-    const fileHeader = button.createDiv({ cls: "metrics-lens-file-button-header" });
-    fileHeader.createSpan({
-      cls: "metrics-lens-file-button-name",
-      text: capitalizeDisplayName(logicalMetricsBaseName(file.name, plugin.settings.supportedExtensions)),
-    });
-    fileHeader.createSpan({
-      cls: "metrics-lens-file-button-size",
-      text: formatFileSize(file.stat.size),
-    });
-
-    button.createDiv({
-      cls: "metrics-lens-file-button-path",
-      text: file.path,
-    });
-    button.createDiv({
-      cls: "metrics-lens-file-button-meta",
-      text: `Updated ${formatModifiedAt(file.stat.mtime)}`,
-    });
+  const menuButton = rowEl.createEl("button", {
+    cls: ["clickable-icon", "metrics-lens-more-button"],
   });
-}
-
-function renderScopePanel(container: HTMLElement): void {
-  const scopePanel = container.createDiv({ cls: "metrics-lens-panel" });
-  scopePanel.createEl("h2", { text: "Current scope" });
-
-  const scopeList = scopePanel.createEl("ul");
-  scopeList.createEl("li", { text: "Contract is locked around `*.metrics.ndjson` files." });
-  scopeList.createEl("li", { text: "Scaffold and file browser integration are working." });
-  scopeList.createEl("li", { text: "Current-file read, validation, and CRUD are working." });
-  scopeList.createEl("li", { text: "Multi-file browsing inside the plugin is now working." });
-}
-
-function renderDeferredPanel(container: HTMLElement): void {
-  const deferredPanel = container.createDiv({ cls: "metrics-lens-panel" });
-  deferredPanel.createEl("h2", { text: "Deferred" });
-
-  const deferredList = deferredPanel.createEl("ul");
-  deferredList.createEl("li", { text: "Ingestion and provider pipelines" });
-  deferredList.createEl("li", { text: "Caching and hidden databases" });
-  deferredList.createEl("li", { text: "Charts, filters, and saved views" });
-  deferredList.createEl("li", { text: "Notes and documents beyond metric references" });
+  menuButton.type = "button";
+  menuButton.setAttribute("aria-label", `More actions for ${row.metric?.key ?? "record"}`);
+  menuButton.setAttribute("data-tooltip-position", "left");
+  setIcon(menuButton, "more-horizontal");
+  menuButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openRecordMenu(event, row, plugin, file, referencePrefix);
+  });
 }
 
 export class MetricsFileView extends TextFileView {
@@ -247,6 +315,14 @@ export class MetricsFileView extends TextFileView {
 
   async onOpen(): Promise<void> {
     this.contentEl.classList.add("metrics-lens-view-root");
+    this.addAction("plus", "Add record", () => {
+      if (!this.file) {
+        new Notice("Open a metrics file first.");
+        return;
+      }
+
+      this.plugin.openCreateRecordModal(this.file);
+    });
     this.render();
   }
 
@@ -278,103 +354,68 @@ export class MetricsFileView extends TextFileView {
     this.contentEl.empty();
 
     const container = this.contentEl.createDiv({ cls: "metrics-lens-view" });
-    const files = this.plugin.listMetricsFiles();
 
-    const status = container.createDiv({ cls: "metrics-lens-status" });
-    if (this.file) {
-      status.setText(
-        `Viewing ${logicalMetricsBaseName(this.file.name, this.plugin.settings.supportedExtensions)}. Select another metrics file from the browser or edit records below.`,
-      );
-    } else if (files.length > 0) {
-      status.setText("Select a metrics file from the browser to inspect and edit its records.");
-    } else {
-      status.setText("No metrics files are available in the configured metrics root.");
-    }
-
-    const layout = container.createDiv({ cls: "metrics-lens-layout" });
-    renderBrowser(layout, this.plugin, files, this.file, this.leaf);
-
-    const main = layout.createDiv({ cls: "metrics-lens-main" });
     if (!this.file) {
-      const emptyPanel = main.createDiv({ cls: "metrics-lens-panel" });
-      emptyPanel.createEl("h2", { text: "Select a file" });
-      emptyPanel.createEl("p", {
-        text: files.length > 0
-          ? "Choose a metrics file from the browser to inspect validation, references, and record-level CRUD."
-          : "Add one or more `*.metrics.ndjson` files under the configured metrics root to start using the metrics lens.",
+      container.createEl("p", {
+        cls: "metrics-lens-empty",
+        text: "Choose a `*.metrics.ndjson` file from the file browser.",
       });
-
-      renderScopePanel(main);
-      renderDeferredPanel(main);
       return;
-    }
-
-    if (!this.plugin.isFileInMetricsRoot(this.file)) {
-      const outsideRootPanel = main.createDiv({ cls: "metrics-lens-panel" });
-      outsideRootPanel.createEl("h2", { text: "Outside metrics root" });
-      outsideRootPanel.createEl("p", {
-        text: `${this.file.path} is open in the metrics view, but it is outside the configured metrics root.`,
-      });
     }
 
     const analysis = analyzeMetricsData(this.data ?? "");
 
-    const filePanel = main.createDiv({ cls: "metrics-lens-panel" });
-    filePanel.createEl("h2", { text: "File" });
+    if (analysis.issueSummary.length > 0) {
+      const issuesSection = container.createDiv({ cls: "metrics-lens-section" });
+      const issuesList = issuesSection.createEl("ul", { cls: "metrics-lens-validation" });
+      analysis.issueSummary.slice(0, 8).forEach((summary) => {
+        issuesList.createEl("li", {
+          cls: `is-${summary.severity}`,
+          text: `${summary.message} (${summary.count})`,
+        });
+      });
+    }
 
-    const fileList = filePanel.createEl("ul");
-    fileList.createEl("li", {
-      text: `Display name: ${capitalizeDisplayName(logicalMetricsBaseName(this.file.name, this.plugin.settings.supportedExtensions))}`,
-    });
-    fileList.createEl("li", {
-      text: `Path: ${this.file.path}`,
-    });
-    fileList.createEl("li", {
-      text: `Rows: ${analysis.totalRows}`,
-    });
-    fileList.createEl("li", {
-      text: `Valid rows: ${analysis.validRows}`,
-    });
-    fileList.createEl("li", {
-      text: `Warning rows: ${analysis.warningRows}`,
-    });
-    fileList.createEl("li", {
-      text: `Error rows: ${analysis.errorRows}`,
-    });
-    fileList.createEl("li", {
-      text: `Legacy rows missing id: ${analysis.legacyRows}`,
-    });
-    fileList.createEl("li", {
-      text: `Reference example: ${toMetricReference("01JRX9Y7T9TQ8Q3A91F1M7A4AA", this.plugin.settings.recordReferencePrefix)}`,
-    });
+    if (analysis.rows.length === 0) {
+      container.createEl("p", {
+        cls: "metrics-lens-section",
+        text: "No records in this file yet.",
+      });
+    } else {
+      const recordsSection = container.createDiv({ cls: "metrics-lens-section" });
+      const recordsList = recordsSection.createDiv({ cls: "metrics-lens-records" });
+      analysis.rows.forEach((row, index) => {
+        renderRecord(
+          recordsList,
+          row,
+          this.plugin,
+          this.file as TFile,
+          this.plugin.settings.recordReferencePrefix,
+          {
+            isFirst: index === 0,
+            isLast: index === analysis.rows.length - 1,
+          },
+        );
+      });
+    }
 
-    const createRow = filePanel.createDiv({ cls: "metrics-lens-actions" });
-    const createButton = createRow.createEl("button", {
-      cls: "mod-cta",
-      text: "Add record",
-    });
-    createButton.type = "button";
-    createButton.setAttribute("aria-label", "Add a metrics record to this file");
-    createButton.addEventListener("click", () => {
-      if (!this.file) {
-        return;
-      }
+    const summaryParts = [`${analysis.totalRows} rows`];
+    const flaggedRows = analysis.warningRows + analysis.errorRows;
+    if (flaggedRows > 0) {
+      summaryParts.push(`${flaggedRows} flagged`);
+    }
+    if (analysis.legacyRows > 0) {
+      summaryParts.push(`${analysis.legacyRows} missing ids`);
+    }
 
-      this.plugin.openCreateRecordModal(this.file);
+    const footer = container.createDiv({ cls: "metrics-lens-footer" });
+    footer.createSpan({
+      cls: "metrics-lens-file-meta",
+      text: `${this.file.path} · ${summaryParts.join(" · ")}`,
     });
 
     if (analysis.legacyRows > 0) {
-      const legacyPanel = main.createDiv({ cls: "metrics-lens-panel" });
-      legacyPanel.createEl("h2", { text: "Legacy ids" });
-      legacyPanel.createEl("p", {
-        text: "This file still uses legacy rows without `id`. Stable CRUD and markdown references require an `id` on every row.",
-      });
-
-      const actionRow = legacyPanel.createDiv({ cls: "metrics-lens-actions" });
-      const assignButton = actionRow.createEl("button", {
-        cls: "mod-cta",
-        text: "Assign missing ids",
-      });
+      const assignButton = footer.createEl("button", { text: "Assign missing ids" });
       assignButton.type = "button";
       assignButton.setAttribute("aria-label", "Assign missing ids in this metrics file");
       assignButton.addEventListener("click", () => {
@@ -385,35 +426,5 @@ export class MetricsFileView extends TextFileView {
         void this.plugin.assignMissingIds(this.file);
       });
     }
-
-    const validationPanel = main.createDiv({ cls: "metrics-lens-panel" });
-    validationPanel.createEl("h2", { text: "Validation" });
-
-    if (analysis.issueSummary.length === 0) {
-      validationPanel.createSpan({ text: "No issues detected." });
-    } else {
-      const validationList = validationPanel.createEl("ul");
-      analysis.issueSummary.slice(0, 8).forEach((summary) => {
-        const item = validationList.createEl("li");
-        createStatusBadge(item, summary.severity, summary.severity);
-        item.createSpan({ text: `${summary.message} (${summary.count})` });
-      });
-    }
-
-    renderScopePanel(main);
-    renderDeferredPanel(main);
-
-    const recordsPanel = main.createDiv({ cls: "metrics-lens-panel" });
-    recordsPanel.createEl("h2", { text: "Records" });
-
-    if (analysis.rows.length === 0) {
-      recordsPanel.createSpan({ text: "This file has no metrics rows yet." });
-      return;
-    }
-
-    const recordsList = recordsPanel.createDiv({ cls: "metrics-lens-records" });
-    analysis.rows.forEach((row) => {
-      renderRecord(recordsList, row, this.plugin, this.file as TFile, this.plugin.settings.recordReferencePrefix);
-    });
   }
 }
