@@ -25,6 +25,72 @@ __export(main_exports, {
 module.exports = __toCommonJS(main_exports);
 var import_obsidian3 = require("obsidian");
 
+// src/ulid.ts
+var CROCKFORD_BASE32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+function encodeBase32(value, length) {
+  let remaining = value;
+  let result = "";
+  for (let index = 0; index < length; index += 1) {
+    const characterIndex = remaining % 32;
+    result = `${CROCKFORD_BASE32[characterIndex]}${result}`;
+    remaining = Math.floor(remaining / 32);
+  }
+  return result;
+}
+function randomBase32(length) {
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
+  let result = "";
+  bytes.forEach((byte) => {
+    result += CROCKFORD_BASE32[byte % 32];
+  });
+  return result;
+}
+function generateUlid(timestamp = Date.now()) {
+  return `${encodeBase32(timestamp, 10)}${randomBase32(16)}`;
+}
+
+// src/metrics-file-mutation.ts
+function isObjectRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function assignMissingIdsToMetricsData(data) {
+  let assigned = 0;
+  let skipped = 0;
+  const hasTrailingNewline = data.endsWith("\n");
+  const rewrittenLines = data.split("\n").map((line) => {
+    if (line.trim().length === 0) {
+      return line;
+    }
+    let parsedValue;
+    try {
+      parsedValue = JSON.parse(line);
+    } catch {
+      skipped += 1;
+      return line;
+    }
+    if (!isObjectRecord(parsedValue)) {
+      skipped += 1;
+      return line;
+    }
+    if (typeof parsedValue.id === "string" && parsedValue.id.trim().length > 0) {
+      return line;
+    }
+    assigned += 1;
+    return JSON.stringify({
+      id: generateUlid(),
+      ...parsedValue
+    });
+  });
+  const content = rewrittenLines.join("\n");
+  return {
+    assigned,
+    content: hasTrailingNewline && !content.endsWith("\n") ? `${content}
+` : content,
+    skipped
+  };
+}
+
 // src/settings.ts
 var import_obsidian = require("obsidian");
 var DEFAULT_SETTINGS = {
@@ -112,6 +178,399 @@ function toMetricReference(id, prefix = METRIC_REFERENCE_PREFIX) {
   return `${prefix}${id}`;
 }
 
+// src/metrics-file-model.ts
+var DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+var ISO_TS_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
+var ULID_RE = /^[0-9A-HJKMNP-TV-Z]{26}$/;
+var KNOWN_UNITS = /* @__PURE__ */ new Set([
+  "bpm",
+  "br/min",
+  "C",
+  "count",
+  "g",
+  "hours",
+  "kcal",
+  "kg",
+  "km",
+  "min",
+  "ml",
+  "mmHg",
+  "ms",
+  "percent",
+  "score"
+]);
+function addIssue(row, issue) {
+  const exists = row.issues.some(
+    (existing) => existing.code === issue.code && existing.field === issue.field && existing.message === issue.message && existing.severity === issue.severity
+  );
+  if (!exists) {
+    row.issues.push(issue);
+  }
+}
+function classifyRowStatus(issues) {
+  if (issues.some((issue) => issue.severity === "error")) {
+    return "error";
+  }
+  if (issues.length > 0) {
+    return "warning";
+  }
+  return "valid";
+}
+function isObjectRecord2(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function isStringArray(value) {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+function validateObjectShape(row, parsed) {
+  const id = parsed.id;
+  if (typeof id !== "string" || id.trim().length === 0) {
+    addIssue(row, {
+      code: "missing_id",
+      field: "id",
+      message: "Missing required field `id`.",
+      severity: "error"
+    });
+  } else {
+    row.metric = {
+      ...row.metric,
+      id
+    };
+    if (!ULID_RE.test(id)) {
+      addIssue(row, {
+        code: "invalid_id",
+        field: "id",
+        message: "`id` must be a ULID string.",
+        severity: "error"
+      });
+    }
+  }
+  const ts = parsed.ts;
+  if (typeof ts !== "string" || ts.trim().length === 0) {
+    addIssue(row, {
+      code: "missing_ts",
+      field: "ts",
+      message: "Missing required field `ts`.",
+      severity: "error"
+    });
+  } else {
+    row.metric = {
+      ...row.metric,
+      ts
+    };
+    if (!ISO_TS_RE.test(ts) || Number.isNaN(Date.parse(ts))) {
+      addIssue(row, {
+        code: "invalid_ts",
+        field: "ts",
+        message: "`ts` must be an ISO-8601 timestamp with timezone.",
+        severity: "error"
+      });
+    }
+  }
+  const key = parsed.key;
+  if (typeof key !== "string" || key.trim().length === 0) {
+    addIssue(row, {
+      code: "missing_key",
+      field: "key",
+      message: "Missing required field `key`.",
+      severity: "error"
+    });
+  } else {
+    row.metric = {
+      ...row.metric,
+      key
+    };
+  }
+  const value = parsed.value;
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    addIssue(row, {
+      code: "invalid_value",
+      field: "value",
+      message: "`value` must be a finite number.",
+      severity: "error"
+    });
+  } else {
+    row.metric = {
+      ...row.metric,
+      value
+    };
+  }
+  const source = parsed.source;
+  if (typeof source !== "string" || source.trim().length === 0) {
+    addIssue(row, {
+      code: "missing_source",
+      field: "source",
+      message: "Missing required field `source`.",
+      severity: "error"
+    });
+  } else {
+    row.metric = {
+      ...row.metric,
+      source
+    };
+  }
+  const date = parsed.date;
+  if (date !== void 0) {
+    if (typeof date !== "string" || !DATE_RE.test(date)) {
+      addIssue(row, {
+        code: "invalid_date",
+        field: "date",
+        message: "`date` must use `YYYY-MM-DD` format.",
+        severity: "error"
+      });
+    } else {
+      row.metric = {
+        ...row.metric,
+        date
+      };
+    }
+  }
+  const unit = parsed.unit;
+  if (unit !== void 0) {
+    if (typeof unit !== "string" || unit.trim().length === 0) {
+      addIssue(row, {
+        code: "invalid_unit",
+        field: "unit",
+        message: "`unit` must be a non-empty string when present.",
+        severity: "error"
+      });
+    } else {
+      row.metric = {
+        ...row.metric,
+        unit
+      };
+      if (!KNOWN_UNITS.has(unit)) {
+        addIssue(row, {
+          code: "unknown_unit",
+          field: "unit",
+          message: `Unknown unit \`${unit}\`.`,
+          severity: "warning"
+        });
+      }
+    }
+  }
+  const originId = parsed.origin_id;
+  if (originId !== void 0) {
+    if (typeof originId !== "string" || originId.trim().length === 0) {
+      addIssue(row, {
+        code: "invalid_origin_id",
+        field: "origin_id",
+        message: "`origin_id` must be a non-empty string when present.",
+        severity: "error"
+      });
+    } else {
+      row.metric = {
+        ...row.metric,
+        origin_id: originId
+      };
+    }
+  }
+  const note = parsed.note;
+  if (note !== void 0) {
+    if (typeof note !== "string") {
+      addIssue(row, {
+        code: "invalid_note",
+        field: "note",
+        message: "`note` must be a string when present.",
+        severity: "error"
+      });
+    } else {
+      row.metric = {
+        ...row.metric,
+        note
+      };
+    }
+  }
+  const context = parsed.context;
+  if (context !== void 0) {
+    if (!isObjectRecord2(context)) {
+      addIssue(row, {
+        code: "invalid_context",
+        field: "context",
+        message: "`context` must be an object when present.",
+        severity: "error"
+      });
+    } else {
+      row.metric = {
+        ...row.metric,
+        context
+      };
+    }
+  }
+  const tags = parsed.tags;
+  if (tags !== void 0) {
+    if (!isStringArray(tags)) {
+      addIssue(row, {
+        code: "invalid_tags",
+        field: "tags",
+        message: "`tags` must be an array of strings when present.",
+        severity: "error"
+      });
+    } else {
+      row.metric = {
+        ...row.metric,
+        tags
+      };
+    }
+  }
+}
+function collectDuplicateRows(rows, field) {
+  const grouped = /* @__PURE__ */ new Map();
+  rows.forEach((row) => {
+    const value = row.metric?.[field];
+    if (typeof value !== "string" || value.length === 0) {
+      return;
+    }
+    const current = grouped.get(value) ?? [];
+    current.push(row);
+    grouped.set(value, current);
+  });
+  const duplicates = /* @__PURE__ */ new Map();
+  grouped.forEach((group, value) => {
+    if (group.length > 1) {
+      duplicates.set(value, group);
+    }
+  });
+  return duplicates;
+}
+function collectUnitsByKey(rows) {
+  const unitsByKey = /* @__PURE__ */ new Map();
+  rows.forEach((row) => {
+    const key = row.metric?.key;
+    const unit = row.metric?.unit;
+    if (typeof key !== "string" || typeof unit !== "string") {
+      return;
+    }
+    const units = unitsByKey.get(key) ?? /* @__PURE__ */ new Set();
+    units.add(unit);
+    unitsByKey.set(key, units);
+  });
+  return unitsByKey;
+}
+function analyzeMetricsData(data) {
+  const rows = [];
+  data.split("\n").forEach((rawLine, index) => {
+    if (rawLine.trim().length === 0) {
+      return;
+    }
+    const row = {
+      issues: [],
+      lineNumber: index + 1,
+      metric: null,
+      rawLine,
+      rowKey: `line-${index + 1}`,
+      status: "valid"
+    };
+    let parsedValue;
+    try {
+      parsedValue = JSON.parse(rawLine);
+    } catch {
+      addIssue(row, {
+        code: "invalid_json",
+        message: "Invalid JSON line.",
+        severity: "error"
+      });
+      row.status = classifyRowStatus(row.issues);
+      rows.push(row);
+      return;
+    }
+    if (!isObjectRecord2(parsedValue)) {
+      addIssue(row, {
+        code: "invalid_shape",
+        message: "Each metrics line must be a JSON object.",
+        severity: "error"
+      });
+      row.status = classifyRowStatus(row.issues);
+      rows.push(row);
+      return;
+    }
+    row.metric = {};
+    validateObjectShape(row, parsedValue);
+    row.status = classifyRowStatus(row.issues);
+    rows.push(row);
+  });
+  collectDuplicateRows(rows, "id").forEach((group, duplicateId) => {
+    group.forEach((row) => {
+      addIssue(row, {
+        code: "duplicate_id",
+        field: "id",
+        message: `Duplicate \`id\` detected: \`${duplicateId}\`.`,
+        severity: "error"
+      });
+      row.status = classifyRowStatus(row.issues);
+    });
+  });
+  collectDuplicateRows(rows, "origin_id").forEach((group, duplicateOriginId) => {
+    group.forEach((row) => {
+      addIssue(row, {
+        code: "duplicate_origin_id",
+        field: "origin_id",
+        message: `Duplicate \`origin_id\` detected: \`${duplicateOriginId}\`.`,
+        severity: "warning"
+      });
+      row.status = classifyRowStatus(row.issues);
+    });
+  });
+  const unitsByKey = collectUnitsByKey(rows);
+  rows.forEach((row) => {
+    const key = row.metric?.key;
+    const unit = row.metric?.unit;
+    if (typeof key !== "string" || typeof unit !== "string") {
+      return;
+    }
+    if ((unitsByKey.get(key)?.size ?? 0) > 1) {
+      addIssue(row, {
+        code: "mixed_key_unit",
+        field: "unit",
+        message: `Metric key \`${key}\` appears with multiple units.`,
+        severity: "warning"
+      });
+      row.status = classifyRowStatus(row.issues);
+    }
+  });
+  const issueSummaryMap = /* @__PURE__ */ new Map();
+  rows.forEach((row) => {
+    row.issues.forEach((issue) => {
+      const summaryKey = `${issue.severity}:${issue.code}:${issue.message}`;
+      const current = issueSummaryMap.get(summaryKey);
+      if (current) {
+        current.count += 1;
+        return;
+      }
+      issueSummaryMap.set(summaryKey, {
+        code: issue.code,
+        count: 1,
+        message: issue.message,
+        severity: issue.severity
+      });
+    });
+  });
+  const issueSummary = Array.from(issueSummaryMap.values()).sort((left, right) => {
+    if (left.severity !== right.severity) {
+      return left.severity === "error" ? -1 : 1;
+    }
+    if (left.count !== right.count) {
+      return right.count - left.count;
+    }
+    return left.message.localeCompare(right.message);
+  });
+  const validRows = rows.filter((row) => row.status === "valid").length;
+  const warningRows = rows.filter((row) => row.status === "warning").length;
+  const errorRows = rows.filter((row) => row.status === "error").length;
+  const legacyRows = rows.filter(
+    (row) => row.issues.some((issue) => issue.code === "missing_id")
+  ).length;
+  return {
+    errorRows,
+    issueSummary,
+    legacyRows,
+    rows,
+    totalRows: rows.length,
+    validRows,
+    warningRows
+  };
+}
+
 // src/view.ts
 var METRICS_VIEW_TYPE = "metrics-file-view";
 function logicalMetricsBaseName(fileName, extensions) {
@@ -127,24 +586,60 @@ function capitalizeDisplayName(value) {
   }
   return `${value.slice(0, 1).toUpperCase()}${value.slice(1)}`;
 }
-function summarizeMetricsData(data) {
-  const lines = data.split("\n").map((line) => line.trimEnd()).filter((line) => line.trim().length > 0);
-  let validRecords = 0;
-  let invalidLines = 0;
-  lines.forEach((line) => {
-    try {
-      JSON.parse(line);
-      validRecords += 1;
-    } catch {
-      invalidLines += 1;
-    }
+function createStatusBadge(container, text, status) {
+  container.createSpan({
+    cls: ["metrics-lens-badge", `is-${status}`],
+    text
   });
-  return {
-    totalLines: lines.length,
-    validRecords,
-    invalidLines,
-    preview: lines.slice(0, 8).join("\n")
-  };
+}
+function formatMetricValue(row) {
+  const value = row.metric?.value;
+  const unit = row.metric?.unit;
+  if (typeof value !== "number") {
+    return "Unknown value";
+  }
+  return typeof unit === "string" ? `${value} ${unit}` : `${value}`;
+}
+function renderIssueList(container, row) {
+  if (row.issues.length === 0) {
+    return;
+  }
+  const issuesList = container.createEl("ul", { cls: "metrics-lens-issues" });
+  row.issues.forEach((issue) => {
+    const item = issuesList.createEl("li");
+    createStatusBadge(item, issue.severity, issue.severity);
+    item.createSpan({ text: issue.message });
+  });
+}
+function renderRecord(container, row, referencePrefix) {
+  const rowEl = container.createDiv({ cls: ["metrics-lens-record", `is-${row.status}`] });
+  const header = rowEl.createDiv({ cls: "metrics-lens-record-header" });
+  header.createSpan({ cls: "metrics-lens-record-line", text: `Line ${row.lineNumber}` });
+  createStatusBadge(header, row.status, row.status);
+  const title = row.metric?.key ?? "Invalid metrics row";
+  rowEl.createEl("h3", { cls: "metrics-lens-record-title", text: title });
+  const facts = rowEl.createDiv({ cls: "metrics-lens-record-facts" });
+  facts.createSpan({ text: row.metric?.date ?? row.metric?.ts ?? "Unknown timestamp" });
+  facts.createSpan({ text: formatMetricValue(row) });
+  facts.createSpan({ text: row.metric?.source ?? "Unknown source" });
+  const references = rowEl.createDiv({ cls: "metrics-lens-record-references" });
+  if (typeof row.metric?.id === "string") {
+    references.createSpan({
+      text: toMetricReference(row.metric.id, referencePrefix)
+    });
+  } else {
+    references.createSpan({ text: "No metric:id reference yet" });
+  }
+  if (typeof row.metric?.origin_id === "string") {
+    references.createSpan({ text: `origin_id: ${row.metric.origin_id}` });
+  }
+  if (typeof row.metric?.note === "string" && row.metric.note.length > 0) {
+    rowEl.createDiv({ cls: "metrics-lens-record-note", text: row.metric.note });
+  }
+  renderIssueList(rowEl, row);
+  if (!row.metric?.key) {
+    rowEl.createEl("pre", { cls: "metrics-lens-record-raw", text: row.rawLine });
+  }
 }
 var MetricsFileView = class extends import_obsidian2.TextFileView {
   constructor(leaf, plugin) {
@@ -191,7 +686,7 @@ var MetricsFileView = class extends import_obsidian2.TextFileView {
   render() {
     this.contentEl.empty();
     const container = this.contentEl.createDiv({ cls: "metrics-lens-view" });
-    const summary = summarizeMetricsData(this.data ?? "");
+    const analysis = analyzeMetricsData(this.data ?? "");
     const status = container.createDiv({ cls: "metrics-lens-status" });
     status.setText(
       this.file ? "Metrics file view is active. Full CRUD lens is the next implementation step." : "No metrics file is open. Open a .metrics.ndjson file from the file browser."
@@ -215,17 +710,54 @@ var MetricsFileView = class extends import_obsidian2.TextFileView {
       text: `Path: ${this.file.path}`
     });
     fileList.createEl("li", {
-      text: `Logical line count: ${summary.totalLines}`
+      text: `Rows: ${analysis.totalRows}`
     });
     fileList.createEl("li", {
-      text: `Valid JSON records: ${summary.validRecords}`
+      text: `Valid rows: ${analysis.validRows}`
     });
     fileList.createEl("li", {
-      text: `Invalid lines: ${summary.invalidLines}`
+      text: `Warning rows: ${analysis.warningRows}`
+    });
+    fileList.createEl("li", {
+      text: `Error rows: ${analysis.errorRows}`
+    });
+    fileList.createEl("li", {
+      text: `Legacy rows missing id: ${analysis.legacyRows}`
     });
     fileList.createEl("li", {
       text: `Reference example: ${toMetricReference("01JRX9Y7T9TQ8Q3A91F1M7A4AA", this.plugin.settings.recordReferencePrefix)}`
     });
+    if (analysis.legacyRows > 0) {
+      const legacyPanel = container.createDiv({ cls: "metrics-lens-panel" });
+      legacyPanel.createEl("h2", { text: "Legacy ids" });
+      legacyPanel.createEl("p", {
+        text: "This file still uses legacy rows without `id`. Stable CRUD and markdown references require an `id` on every row."
+      });
+      const actionRow = legacyPanel.createDiv({ cls: "metrics-lens-actions" });
+      const assignButton = actionRow.createEl("button", {
+        cls: "mod-cta",
+        text: "Assign missing ids"
+      });
+      assignButton.setAttribute("aria-label", "Assign missing ids in this metrics file");
+      assignButton.addEventListener("click", () => {
+        if (!this.file) {
+          return;
+        }
+        void this.plugin.assignMissingIds(this.file);
+      });
+    }
+    const validationPanel = container.createDiv({ cls: "metrics-lens-panel" });
+    validationPanel.createEl("h2", { text: "Validation" });
+    if (analysis.issueSummary.length === 0) {
+      validationPanel.createSpan({ text: "No issues detected." });
+    } else {
+      const validationList = validationPanel.createEl("ul");
+      analysis.issueSummary.slice(0, 8).forEach((summary) => {
+        const item = validationList.createEl("li");
+        createStatusBadge(item, summary.severity, summary.severity);
+        item.createSpan({ text: `${summary.message} (${summary.count})` });
+      });
+    }
     const scopePanel = container.createDiv({ cls: "metrics-lens-panel" });
     scopePanel.createEl("h2", { text: "Current scope" });
     const scopeList = scopePanel.createEl("ul");
@@ -239,10 +771,16 @@ var MetricsFileView = class extends import_obsidian2.TextFileView {
     deferredList.createEl("li", { text: "Caching and hidden databases" });
     deferredList.createEl("li", { text: "Charts, filters, and saved views" });
     deferredList.createEl("li", { text: "Notes and documents beyond metric references" });
-    const previewPanel = container.createDiv({ cls: "metrics-lens-panel" });
-    previewPanel.createEl("h2", { text: "Raw preview" });
-    const previewEl = previewPanel.createEl("pre", { cls: "metrics-lens-preview" });
-    previewEl.setText(summary.preview.length > 0 ? summary.preview : "(empty file)");
+    const recordsPanel = container.createDiv({ cls: "metrics-lens-panel" });
+    recordsPanel.createEl("h2", { text: "Records" });
+    if (analysis.rows.length === 0) {
+      recordsPanel.createSpan({ text: "This file has no metrics rows yet." });
+      return;
+    }
+    const recordsList = recordsPanel.createDiv({ cls: "metrics-lens-records" });
+    analysis.rows.forEach((row) => {
+      renderRecord(recordsList, row, this.plugin.settings.recordReferencePrefix);
+    });
   }
 };
 
@@ -270,6 +808,20 @@ var MetricsPlugin = class extends import_obsidian3.Plugin {
         }
         if (!checking) {
           void this.openFileInMetricsView(file, this.app.workspace.activeLeaf);
+        }
+        return true;
+      }
+    });
+    this.addCommand({
+      id: "assign-missing-ids-current-file",
+      name: "Assign missing ids in current metrics file",
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file || !this.isMetricsFile(file)) {
+          return false;
+        }
+        if (!checking) {
+          void this.assignMissingIds(file);
         }
         return true;
       }
@@ -357,6 +909,26 @@ var MetricsPlugin = class extends import_obsidian3.Plugin {
       }
     });
     this.queueFileExplorerLabelSync();
+  }
+  async assignMissingIds(file) {
+    let assigned = 0;
+    let skipped = 0;
+    await this.app.vault.process(file, (data) => {
+      const result = assignMissingIdsToMetricsData(data);
+      assigned = result.assigned;
+      skipped = result.skipped;
+      return result.content;
+    });
+    if (assigned === 0) {
+      new import_obsidian3.Notice(
+        skipped > 0 ? "No missing ids were assigned. Some rows were skipped because they are invalid." : "No missing ids were found in this metrics file."
+      );
+      return;
+    }
+    new import_obsidian3.Notice(
+      skipped > 0 ? `Assigned ${assigned} ids. Skipped ${skipped} invalid rows.` : `Assigned ${assigned} ids.`
+    );
+    this.refreshOpenMetricsViews();
   }
   suppressAutoOpenForPath(path) {
     this.suppressedAutoOpenPaths.add(path);

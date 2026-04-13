@@ -26,6 +26,32 @@
   padding-left: var(--size-4-4);
 }
 
+.metrics-lens-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 var(--size-4-2);
+  border-radius: 999px;
+  font-size: var(--font-ui-smaller);
+  background-color: var(--background-primary-alt);
+  color: var(--text-muted);
+}
+
+.metrics-lens-badge.is-valid {
+  background-color: color-mix(in srgb, var(--color-green) 18%, var(--background-primary-alt));
+  color: var(--text-normal);
+}
+
+.metrics-lens-badge.is-warning {
+  background-color: color-mix(in srgb, var(--color-yellow) 20%, var(--background-primary-alt));
+  color: var(--text-normal);
+}
+
+.metrics-lens-badge.is-error {
+  background-color: color-mix(in srgb, var(--color-red) 18%, var(--background-primary-alt));
+  color: var(--text-normal);
+}
+
 .metrics-lens-status {
   display: inline-flex;
   align-items: center;
@@ -39,6 +65,94 @@
 .metrics-lens-preview {
   margin: 0;
   padding: var(--size-4-3);
+  border-radius: var(--radius-s);
+  background-color: var(--background-primary-alt);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.metrics-lens-records {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-3);
+}
+
+.metrics-lens-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2);
+}
+
+.metrics-lens-actions button {
+  min-height: 44px;
+}
+
+.metrics-lens-record {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
+  padding: var(--size-4-3);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background-color: var(--background-primary);
+}
+
+.metrics-lens-record.is-error {
+  border-color: color-mix(in srgb, var(--color-red) 35%, var(--background-modifier-border));
+}
+
+.metrics-lens-record.is-warning {
+  border-color: color-mix(in srgb, var(--color-yellow) 40%, var(--background-modifier-border));
+}
+
+.metrics-lens-record-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--size-4-2);
+}
+
+.metrics-lens-record-line {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.metrics-lens-record-title {
+  margin: 0;
+  font-size: var(--font-ui-medium);
+  line-height: var(--line-height-normal);
+}
+
+.metrics-lens-record-facts,
+.metrics-lens-record-references {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.metrics-lens-record-note {
+  color: var(--text-normal);
+}
+
+.metrics-lens-issues {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
+  margin: 0;
+  padding-left: var(--size-4-4);
+}
+
+.metrics-lens-issues li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--size-4-2);
+}
+
+.metrics-lens-record-raw {
+  margin: 0;
+  padding: var(--size-4-2);
   border-radius: var(--radius-s);
   background-color: var(--background-primary-alt);
   white-space: pre-wrap;

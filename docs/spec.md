@@ -6,9 +6,9 @@
 - Contract status: locked for scaffold and CRUD foundation
 - Scaffold status: bootstrapped in this repository
 - Vault dev status: linked into the live `totocaster` vault for real-time testing
-- Current implementation status: file-backed metrics view is working; CRUD is not implemented yet
+- Current implementation status: file-backed metrics view, record parsing, validation, and missing-id migration are working; CRUD is not implemented yet
 - File browser status: `*.metrics.ndjson` files are routed into the plugin view and sidebar labels are normalized to logical metric dataset names
-- Next implementation phase: record parsing, validation, and CRUD over metric files
+- Next implementation phase: record-level CRUD and `id` migration support for legacy files
 
 ## Product
 
@@ -176,8 +176,10 @@ The display name omits "Obsidian" to stay aligned with common community plugin n
 - `metrics.ndjson` is registered as a compound extension for the metrics view
 - `ndjson` is registered as a file-browser fallback so metrics files remain visible in the sidebar
 - The plugin rewrites file browser labels so `withings.metrics.ndjson` appears as `withings`
-- The current file view is intentionally shallow: file summary, status, and raw preview only
-- The next meaningful milestone is moving from file shell to record-level read and mutation flows
+- The current file view parses live rows, validates them, and surfaces file-level and row-level diagnostics
+- The current vault data is legacy relative to the v1 contract because rows use `origin_id` but not `id`
+- The plugin can now assign missing ULIDs to a current metrics file so legacy rows can move into the v1 contract
+- The next meaningful milestone is record-level mutation flows once stable ids exist
 
 ## Open questions
 

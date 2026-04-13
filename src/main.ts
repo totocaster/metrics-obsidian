@@ -1,5 +1,6 @@
 import { FileView, Notice, Plugin, TFile, WorkspaceLeaf } from "obsidian";
 
+import { assignMissingIdsToMetricsData } from "./metrics-file-mutation";
 import { DEFAULT_SETTINGS, MetricsPluginSettings, MetricsSettingTab, normalizeMetricsSettings } from "./settings";
 import { logicalMetricsBaseName, METRICS_VIEW_TYPE, MetricsFileView } from "./view";
 
@@ -31,6 +32,23 @@ export default class MetricsPlugin extends Plugin {
 
         if (!checking) {
           void this.openFileInMetricsView(file, this.app.workspace.activeLeaf);
+        }
+
+        return true;
+      },
+    });
+
+    this.addCommand({
+      id: "assign-missing-ids-current-file",
+      name: "Assign missing ids in current metrics file",
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file || !this.isMetricsFile(file)) {
+          return false;
+        }
+
+        if (!checking) {
+          void this.assignMissingIds(file);
         }
 
         return true;
@@ -138,6 +156,34 @@ export default class MetricsPlugin extends Plugin {
     });
 
     this.queueFileExplorerLabelSync();
+  }
+
+  async assignMissingIds(file: TFile): Promise<void> {
+    let assigned = 0;
+    let skipped = 0;
+
+    await this.app.vault.process(file, (data) => {
+      const result = assignMissingIdsToMetricsData(data);
+      assigned = result.assigned;
+      skipped = result.skipped;
+      return result.content;
+    });
+
+    if (assigned === 0) {
+      new Notice(
+        skipped > 0
+          ? "No missing ids were assigned. Some rows were skipped because they are invalid."
+          : "No missing ids were found in this metrics file.",
+      );
+      return;
+    }
+
+    new Notice(
+      skipped > 0
+        ? `Assigned ${assigned} ids. Skipped ${skipped} invalid rows.`
+        : `Assigned ${assigned} ids.`,
+    );
+    this.refreshOpenMetricsViews();
   }
 
   private suppressAutoOpenForPath(path: string): void {

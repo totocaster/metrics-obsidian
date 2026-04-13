@@ -2,6 +2,7 @@ import { TFile, TextFileView, WorkspaceLeaf } from "obsidian";
 
 import { toMetricReference } from "./contract";
 import type MetricsPlugin from "./main";
+import { analyzeMetricsData, type MetricIssueSeverity, type MetricRowStatus, type ParsedMetricRow } from "./metrics-file-model";
 
 export const METRICS_VIEW_TYPE = "metrics-file-view";
 
@@ -22,35 +23,74 @@ function capitalizeDisplayName(value: string): string {
   return `${value.slice(0, 1).toUpperCase()}${value.slice(1)}`;
 }
 
-function summarizeMetricsData(data: string): {
-  totalLines: number;
-  validRecords: number;
-  invalidLines: number;
-  preview: string;
-} {
-  const lines = data
-    .split("\n")
-    .map((line) => line.trimEnd())
-    .filter((line) => line.trim().length > 0);
-
-  let validRecords = 0;
-  let invalidLines = 0;
-
-  lines.forEach((line) => {
-    try {
-      JSON.parse(line);
-      validRecords += 1;
-    } catch {
-      invalidLines += 1;
-    }
+function createStatusBadge(container: HTMLElement, text: string, status: MetricIssueSeverity | MetricRowStatus): void {
+  container.createSpan({
+    cls: ["metrics-lens-badge", `is-${status}`],
+    text,
   });
+}
 
-  return {
-    totalLines: lines.length,
-    validRecords,
-    invalidLines,
-    preview: lines.slice(0, 8).join("\n"),
-  };
+function formatMetricValue(row: ParsedMetricRow): string {
+  const value = row.metric?.value;
+  const unit = row.metric?.unit;
+
+  if (typeof value !== "number") {
+    return "Unknown value";
+  }
+
+  return typeof unit === "string" ? `${value} ${unit}` : `${value}`;
+}
+
+function renderIssueList(container: HTMLElement, row: ParsedMetricRow): void {
+  if (row.issues.length === 0) {
+    return;
+  }
+
+  const issuesList = container.createEl("ul", { cls: "metrics-lens-issues" });
+  row.issues.forEach((issue) => {
+    const item = issuesList.createEl("li");
+    createStatusBadge(item, issue.severity, issue.severity);
+    item.createSpan({ text: issue.message });
+  });
+}
+
+function renderRecord(container: HTMLElement, row: ParsedMetricRow, referencePrefix: string): void {
+  const rowEl = container.createDiv({ cls: ["metrics-lens-record", `is-${row.status}`] });
+
+  const header = rowEl.createDiv({ cls: "metrics-lens-record-header" });
+  header.createSpan({ cls: "metrics-lens-record-line", text: `Line ${row.lineNumber}` });
+  createStatusBadge(header, row.status, row.status);
+
+  const title = row.metric?.key ?? "Invalid metrics row";
+  rowEl.createEl("h3", { cls: "metrics-lens-record-title", text: title });
+
+  const facts = rowEl.createDiv({ cls: "metrics-lens-record-facts" });
+  facts.createSpan({ text: row.metric?.date ?? row.metric?.ts ?? "Unknown timestamp" });
+  facts.createSpan({ text: formatMetricValue(row) });
+  facts.createSpan({ text: row.metric?.source ?? "Unknown source" });
+
+  const references = rowEl.createDiv({ cls: "metrics-lens-record-references" });
+  if (typeof row.metric?.id === "string") {
+    references.createSpan({
+      text: toMetricReference(row.metric.id, referencePrefix),
+    });
+  } else {
+    references.createSpan({ text: "No metric:id reference yet" });
+  }
+
+  if (typeof row.metric?.origin_id === "string") {
+    references.createSpan({ text: `origin_id: ${row.metric.origin_id}` });
+  }
+
+  if (typeof row.metric?.note === "string" && row.metric.note.length > 0) {
+    rowEl.createDiv({ cls: "metrics-lens-record-note", text: row.metric.note });
+  }
+
+  renderIssueList(rowEl, row);
+
+  if (!row.metric?.key) {
+    rowEl.createEl("pre", { cls: "metrics-lens-record-raw", text: row.rawLine });
+  }
 }
 
 export class MetricsFileView extends TextFileView {
@@ -113,7 +153,7 @@ export class MetricsFileView extends TextFileView {
     this.contentEl.empty();
 
     const container = this.contentEl.createDiv({ cls: "metrics-lens-view" });
-    const summary = summarizeMetricsData(this.data ?? "");
+    const analysis = analyzeMetricsData(this.data ?? "");
 
     const status = container.createDiv({ cls: "metrics-lens-status" });
     status.setText(
@@ -144,17 +184,59 @@ export class MetricsFileView extends TextFileView {
       text: `Path: ${this.file.path}`,
     });
     fileList.createEl("li", {
-      text: `Logical line count: ${summary.totalLines}`,
+      text: `Rows: ${analysis.totalRows}`,
     });
     fileList.createEl("li", {
-      text: `Valid JSON records: ${summary.validRecords}`,
+      text: `Valid rows: ${analysis.validRows}`,
     });
     fileList.createEl("li", {
-      text: `Invalid lines: ${summary.invalidLines}`,
+      text: `Warning rows: ${analysis.warningRows}`,
+    });
+    fileList.createEl("li", {
+      text: `Error rows: ${analysis.errorRows}`,
+    });
+    fileList.createEl("li", {
+      text: `Legacy rows missing id: ${analysis.legacyRows}`,
     });
     fileList.createEl("li", {
       text: `Reference example: ${toMetricReference("01JRX9Y7T9TQ8Q3A91F1M7A4AA", this.plugin.settings.recordReferencePrefix)}`,
     });
+
+    if (analysis.legacyRows > 0) {
+      const legacyPanel = container.createDiv({ cls: "metrics-lens-panel" });
+      legacyPanel.createEl("h2", { text: "Legacy ids" });
+      legacyPanel.createEl("p", {
+        text: "This file still uses legacy rows without `id`. Stable CRUD and markdown references require an `id` on every row.",
+      });
+
+      const actionRow = legacyPanel.createDiv({ cls: "metrics-lens-actions" });
+      const assignButton = actionRow.createEl("button", {
+        cls: "mod-cta",
+        text: "Assign missing ids",
+      });
+      assignButton.setAttribute("aria-label", "Assign missing ids in this metrics file");
+      assignButton.addEventListener("click", () => {
+        if (!this.file) {
+          return;
+        }
+
+        void this.plugin.assignMissingIds(this.file);
+      });
+    }
+
+    const validationPanel = container.createDiv({ cls: "metrics-lens-panel" });
+    validationPanel.createEl("h2", { text: "Validation" });
+
+    if (analysis.issueSummary.length === 0) {
+      validationPanel.createSpan({ text: "No issues detected." });
+    } else {
+      const validationList = validationPanel.createEl("ul");
+      analysis.issueSummary.slice(0, 8).forEach((summary) => {
+        const item = validationList.createEl("li");
+        createStatusBadge(item, summary.severity, summary.severity);
+        item.createSpan({ text: `${summary.message} (${summary.count})` });
+      });
+    }
 
     const scopePanel = container.createDiv({ cls: "metrics-lens-panel" });
     scopePanel.createEl("h2", { text: "Current scope" });
@@ -173,10 +255,17 @@ export class MetricsFileView extends TextFileView {
     deferredList.createEl("li", { text: "Charts, filters, and saved views" });
     deferredList.createEl("li", { text: "Notes and documents beyond metric references" });
 
-    const previewPanel = container.createDiv({ cls: "metrics-lens-panel" });
-    previewPanel.createEl("h2", { text: "Raw preview" });
+    const recordsPanel = container.createDiv({ cls: "metrics-lens-panel" });
+    recordsPanel.createEl("h2", { text: "Records" });
 
-    const previewEl = previewPanel.createEl("pre", { cls: "metrics-lens-preview" });
-    previewEl.setText(summary.preview.length > 0 ? summary.preview : "(empty file)");
+    if (analysis.rows.length === 0) {
+      recordsPanel.createSpan({ text: "This file has no metrics rows yet." });
+      return;
+    }
+
+    const recordsList = recordsPanel.createDiv({ cls: "metrics-lens-records" });
+    analysis.rows.forEach((row) => {
+      renderRecord(recordsList, row, this.plugin.settings.recordReferencePrefix);
+    });
   }
 }
