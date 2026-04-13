@@ -1,0 +1,19 @@
+{
+  "name": "metrics-lens",
+  "version": "0.1.0",
+  "private": true,
+  "description": "View, edit, and manage plaintext metric files.",
+  "author": "Toto Tvalavadze",
+  "homepage": "https://ttvl.co",
+  "scripts": {
+    "build": "node esbuild.config.mjs production",
+    "check": "tsc --noEmit",
+    "dev": "node esbuild.config.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "esbuild": "^0.28.0",
+    "obsidian": "^1.12.3",
+    "typescript": "^6.0.2"
+  }
+}

@@ -1,0 +1,121 @@
+import { App, PluginSettingTab, Setting, normalizePath } from "obsidian";
+
+import type MetricsPlugin from "./main";
+
+export interface MetricsPluginSettings {
+  metricsRoot: string;
+  supportedExtensions: string[];
+  defaultWriteFile: string;
+  recordReferencePrefix: string;
+}
+
+export const DEFAULT_SETTINGS: MetricsPluginSettings = {
+  metricsRoot: "Metrics",
+  supportedExtensions: [".metrics.ndjson"],
+  defaultWriteFile: "Metrics/All.metrics.ndjson",
+  recordReferencePrefix: "metric:",
+};
+
+export function normalizeMetricsSettings(
+  settings: Partial<MetricsPluginSettings>,
+): MetricsPluginSettings {
+  const supportedExtensions = settings.supportedExtensions?.length
+    ? settings.supportedExtensions
+    : DEFAULT_SETTINGS.supportedExtensions;
+
+  return {
+    metricsRoot: normalizePath(settings.metricsRoot ?? DEFAULT_SETTINGS.metricsRoot),
+    supportedExtensions: Array.from(
+      new Set(
+        supportedExtensions
+          .map((value) => value.trim())
+          .filter((value) => value.length > 0),
+      ),
+    ),
+    defaultWriteFile: normalizePath(settings.defaultWriteFile ?? DEFAULT_SETTINGS.defaultWriteFile),
+    recordReferencePrefix:
+      settings.recordReferencePrefix?.trim() || DEFAULT_SETTINGS.recordReferencePrefix,
+  };
+}
+
+function formatExtensions(extensions: string[]): string {
+  return extensions.join(", ");
+}
+
+function parseExtensions(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
+export class MetricsSettingTab extends PluginSettingTab {
+  constructor(
+    app: App,
+    private readonly plugin: MetricsPlugin,
+  ) {
+    super(app, plugin);
+  }
+
+  display(): void {
+    const { containerEl } = this;
+    containerEl.empty();
+
+    new Setting(containerEl).setName("Storage").setHeading();
+
+    new Setting(containerEl)
+      .setName("Metrics root folder")
+      .setDesc("Folder scanned for canonical metrics files.")
+      .addText((text) => {
+        text.setPlaceholder(DEFAULT_SETTINGS.metricsRoot);
+        text.setValue(this.plugin.settings.metricsRoot);
+        text.onChange(async (value) => {
+          this.plugin.settings.metricsRoot = normalizePath(value || DEFAULT_SETTINGS.metricsRoot);
+          await this.plugin.saveSettings();
+          this.plugin.refreshOpenMetricsViews();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("Supported extensions")
+      .setDesc("Comma-separated list of file suffixes treated as metrics files.")
+      .addText((text) => {
+        text.setPlaceholder(formatExtensions(DEFAULT_SETTINGS.supportedExtensions));
+        text.setValue(formatExtensions(this.plugin.settings.supportedExtensions));
+        text.onChange(async (value) => {
+          this.plugin.settings.supportedExtensions = parseExtensions(value);
+          await this.plugin.saveSettings();
+          this.plugin.refreshOpenMetricsViews();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("Default write file")
+      .setDesc("Default target file used by future create and append actions.")
+      .addText((text) => {
+        text.setPlaceholder(DEFAULT_SETTINGS.defaultWriteFile);
+        text.setValue(this.plugin.settings.defaultWriteFile);
+        text.onChange(async (value) => {
+          this.plugin.settings.defaultWriteFile = normalizePath(
+            value || DEFAULT_SETTINGS.defaultWriteFile,
+          );
+          await this.plugin.saveSettings();
+          this.plugin.refreshOpenMetricsViews();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("Record reference prefix")
+      .setDesc("Plain-text prefix used for stable metric references in Markdown.")
+      .addText((text) => {
+        text.setPlaceholder(DEFAULT_SETTINGS.recordReferencePrefix);
+        text.setValue(this.plugin.settings.recordReferencePrefix);
+        text.onChange(async (value) => {
+          this.plugin.settings.recordReferencePrefix =
+            value.trim() || DEFAULT_SETTINGS.recordReferencePrefix;
+          await this.plugin.saveSettings();
+          this.plugin.refreshOpenMetricsViews();
+        });
+      });
+  }
+}
