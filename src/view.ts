@@ -1,6 +1,6 @@
 import { TFile, TextFileView, WorkspaceLeaf } from "obsidian";
 
-import { toMetricReference } from "./contract";
+import { toMetricReference, type MetricRecord } from "./contract";
 import type MetricsPlugin from "./main";
 import { analyzeMetricsData, type MetricIssueSeverity, type MetricRowStatus, type ParsedMetricRow } from "./metrics-file-model";
 
@@ -39,6 +39,22 @@ function formatMetricValue(row: ParsedMetricRow): string {
   }
 
   return typeof unit === "string" ? `${value} ${unit}` : `${value}`;
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatModifiedAt(timestamp: number): string {
+  return new Date(timestamp).toLocaleString();
 }
 
 function renderIssueList(container: HTMLElement, row: ParsedMetricRow): void {
@@ -96,18 +112,20 @@ function renderRecord(
     const actions = rowEl.createDiv({ cls: "metrics-lens-actions" });
 
     const editButton = actions.createEl("button", { text: "Edit" });
+    editButton.type = "button";
     editButton.setAttribute("aria-label", `Edit ${row.metric.key}`);
     editButton.addEventListener("click", () => {
-      plugin.openEditRecordModal(file, row.metric as import("./contract").MetricRecord);
+      plugin.openEditRecordModal(file, row.metric as MetricRecord);
     });
 
     const deleteButton = actions.createEl("button", {
       cls: "mod-warning",
       text: "Delete",
     });
+    deleteButton.type = "button";
     deleteButton.setAttribute("aria-label", `Delete ${row.metric.key}`);
     deleteButton.addEventListener("click", () => {
-      plugin.confirmDeleteRecord(file, row.metric as import("./contract").MetricRecord);
+      plugin.confirmDeleteRecord(file, row.metric as MetricRecord);
     });
   }
 
@@ -116,6 +134,88 @@ function renderRecord(
   if (!row.metric?.key) {
     rowEl.createEl("pre", { cls: "metrics-lens-record-raw", text: row.rawLine });
   }
+}
+
+function renderBrowser(
+  container: HTMLElement,
+  plugin: MetricsPlugin,
+  files: TFile[],
+  selectedFile: TFile | null,
+  leaf: WorkspaceLeaf,
+): void {
+  const browserPanel = container.createDiv({ cls: ["metrics-lens-panel", "metrics-lens-browser"] });
+  browserPanel.createEl("h2", { text: "Metrics files" });
+
+  const browserSummary = browserPanel.createEl("ul");
+  browserSummary.createEl("li", { text: `Metrics root: ${plugin.settings.metricsRoot}` });
+  browserSummary.createEl("li", { text: `Files in scope: ${files.length}` });
+  browserSummary.createEl("li", {
+    text: selectedFile ? `Selected: ${selectedFile.path}` : "Selected: none",
+  });
+
+  if (files.length === 0) {
+    browserPanel.createEl("p", {
+      text: "No metrics files were found under the configured metrics root.",
+    });
+    return;
+  }
+
+  const browserList = browserPanel.createDiv({ cls: "metrics-lens-browser-list" });
+  files.forEach((file) => {
+    const isSelected = selectedFile?.path === file.path;
+    const button = browserList.createEl("button", {
+      cls: ["metrics-lens-file-button", isSelected ? "is-selected" : ""],
+    });
+    button.type = "button";
+    button.setAttribute(
+      "aria-label",
+      `Open ${logicalMetricsBaseName(file.name, plugin.settings.supportedExtensions)} metrics file`,
+    );
+    button.addEventListener("click", () => {
+      void plugin.openMetricsFile(file, leaf);
+    });
+
+    const fileHeader = button.createDiv({ cls: "metrics-lens-file-button-header" });
+    fileHeader.createSpan({
+      cls: "metrics-lens-file-button-name",
+      text: capitalizeDisplayName(logicalMetricsBaseName(file.name, plugin.settings.supportedExtensions)),
+    });
+    fileHeader.createSpan({
+      cls: "metrics-lens-file-button-size",
+      text: formatFileSize(file.stat.size),
+    });
+
+    button.createDiv({
+      cls: "metrics-lens-file-button-path",
+      text: file.path,
+    });
+    button.createDiv({
+      cls: "metrics-lens-file-button-meta",
+      text: `Updated ${formatModifiedAt(file.stat.mtime)}`,
+    });
+  });
+}
+
+function renderScopePanel(container: HTMLElement): void {
+  const scopePanel = container.createDiv({ cls: "metrics-lens-panel" });
+  scopePanel.createEl("h2", { text: "Current scope" });
+
+  const scopeList = scopePanel.createEl("ul");
+  scopeList.createEl("li", { text: "Contract is locked around `*.metrics.ndjson` files." });
+  scopeList.createEl("li", { text: "Scaffold and file browser integration are working." });
+  scopeList.createEl("li", { text: "Current-file read, validation, and CRUD are working." });
+  scopeList.createEl("li", { text: "Multi-file browsing inside the plugin is now working." });
+}
+
+function renderDeferredPanel(container: HTMLElement): void {
+  const deferredPanel = container.createDiv({ cls: "metrics-lens-panel" });
+  deferredPanel.createEl("h2", { text: "Deferred" });
+
+  const deferredList = deferredPanel.createEl("ul");
+  deferredList.createEl("li", { text: "Ingestion and provider pipelines" });
+  deferredList.createEl("li", { text: "Caching and hidden databases" });
+  deferredList.createEl("li", { text: "Charts, filters, and saved views" });
+  deferredList.createEl("li", { text: "Notes and documents beyond metric references" });
 }
 
 export class MetricsFileView extends TextFileView {
@@ -178,27 +278,48 @@ export class MetricsFileView extends TextFileView {
     this.contentEl.empty();
 
     const container = this.contentEl.createDiv({ cls: "metrics-lens-view" });
-    const analysis = analyzeMetricsData(this.data ?? "");
+    const files = this.plugin.listMetricsFiles();
 
     const status = container.createDiv({ cls: "metrics-lens-status" });
-    status.setText(
-      this.file
-        ? "Metrics file view is active. Full CRUD lens is the next implementation step."
-        : "No metrics file is open. Open a .metrics.ndjson file from the file browser.",
-    );
+    if (this.file) {
+      status.setText(
+        `Viewing ${logicalMetricsBaseName(this.file.name, this.plugin.settings.supportedExtensions)}. Select another metrics file from the browser or edit records below.`,
+      );
+    } else if (files.length > 0) {
+      status.setText("Select a metrics file from the browser to inspect and edit its records.");
+    } else {
+      status.setText("No metrics files are available in the configured metrics root.");
+    }
 
+    const layout = container.createDiv({ cls: "metrics-lens-layout" });
+    renderBrowser(layout, this.plugin, files, this.file, this.leaf);
+
+    const main = layout.createDiv({ cls: "metrics-lens-main" });
     if (!this.file) {
-      const emptyPanel = container.createDiv({ cls: "metrics-lens-panel" });
-      emptyPanel.createEl("h2", { text: "File browser integration" });
+      const emptyPanel = main.createDiv({ cls: "metrics-lens-panel" });
+      emptyPanel.createEl("h2", { text: "Select a file" });
+      emptyPanel.createEl("p", {
+        text: files.length > 0
+          ? "Choose a metrics file from the browser to inspect validation, references, and record-level CRUD."
+          : "Add one or more `*.metrics.ndjson` files under the configured metrics root to start using the metrics lens.",
+      });
 
-      const emptyList = emptyPanel.createEl("ul");
-      emptyList.createEl("li", { text: "Compound extension registered: metrics.ndjson" });
-      emptyList.createEl("li", { text: "File browser should show logical file names without the suffix" });
-      emptyList.createEl("li", { text: "Capitalization in the sidebar follows the actual file name on disk" });
+      renderScopePanel(main);
+      renderDeferredPanel(main);
       return;
     }
 
-    const filePanel = container.createDiv({ cls: "metrics-lens-panel" });
+    if (!this.plugin.isFileInMetricsRoot(this.file)) {
+      const outsideRootPanel = main.createDiv({ cls: "metrics-lens-panel" });
+      outsideRootPanel.createEl("h2", { text: "Outside metrics root" });
+      outsideRootPanel.createEl("p", {
+        text: `${this.file.path} is open in the metrics view, but it is outside the configured metrics root.`,
+      });
+    }
+
+    const analysis = analyzeMetricsData(this.data ?? "");
+
+    const filePanel = main.createDiv({ cls: "metrics-lens-panel" });
     filePanel.createEl("h2", { text: "File" });
 
     const fileList = filePanel.createEl("ul");
@@ -232,6 +353,7 @@ export class MetricsFileView extends TextFileView {
       cls: "mod-cta",
       text: "Add record",
     });
+    createButton.type = "button";
     createButton.setAttribute("aria-label", "Add a metrics record to this file");
     createButton.addEventListener("click", () => {
       if (!this.file) {
@@ -242,7 +364,7 @@ export class MetricsFileView extends TextFileView {
     });
 
     if (analysis.legacyRows > 0) {
-      const legacyPanel = container.createDiv({ cls: "metrics-lens-panel" });
+      const legacyPanel = main.createDiv({ cls: "metrics-lens-panel" });
       legacyPanel.createEl("h2", { text: "Legacy ids" });
       legacyPanel.createEl("p", {
         text: "This file still uses legacy rows without `id`. Stable CRUD and markdown references require an `id` on every row.",
@@ -253,6 +375,7 @@ export class MetricsFileView extends TextFileView {
         cls: "mod-cta",
         text: "Assign missing ids",
       });
+      assignButton.type = "button";
       assignButton.setAttribute("aria-label", "Assign missing ids in this metrics file");
       assignButton.addEventListener("click", () => {
         if (!this.file) {
@@ -263,7 +386,7 @@ export class MetricsFileView extends TextFileView {
       });
     }
 
-    const validationPanel = container.createDiv({ cls: "metrics-lens-panel" });
+    const validationPanel = main.createDiv({ cls: "metrics-lens-panel" });
     validationPanel.createEl("h2", { text: "Validation" });
 
     if (analysis.issueSummary.length === 0) {
@@ -277,24 +400,10 @@ export class MetricsFileView extends TextFileView {
       });
     }
 
-    const scopePanel = container.createDiv({ cls: "metrics-lens-panel" });
-    scopePanel.createEl("h2", { text: "Current scope" });
+    renderScopePanel(main);
+    renderDeferredPanel(main);
 
-    const scopeList = scopePanel.createEl("ul");
-    scopeList.createEl("li", { text: "Contract" });
-    scopeList.createEl("li", { text: "Scaffold" });
-    scopeList.createEl("li", { text: "Lens over metrics files with CRUD next" });
-
-    const deferredPanel = container.createDiv({ cls: "metrics-lens-panel" });
-    deferredPanel.createEl("h2", { text: "Deferred" });
-
-    const deferredList = deferredPanel.createEl("ul");
-    deferredList.createEl("li", { text: "Ingestion and provider pipelines" });
-    deferredList.createEl("li", { text: "Caching and hidden databases" });
-    deferredList.createEl("li", { text: "Charts, filters, and saved views" });
-    deferredList.createEl("li", { text: "Notes and documents beyond metric references" });
-
-    const recordsPanel = container.createDiv({ cls: "metrics-lens-panel" });
+    const recordsPanel = main.createDiv({ cls: "metrics-lens-panel" });
     recordsPanel.createEl("h2", { text: "Records" });
 
     if (analysis.rows.length === 0) {

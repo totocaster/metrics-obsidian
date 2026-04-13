@@ -9,6 +9,20 @@
   padding: var(--size-4-4);
 }
 
+.metrics-lens-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  gap: var(--size-4-4);
+  align-items: start;
+}
+
+.metrics-lens-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-4);
+  min-width: 0;
+}
+
 .metrics-lens-panel {
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-m);
@@ -24,6 +38,61 @@
 .metrics-lens-panel ul {
   margin: 0;
   padding-left: var(--size-4-4);
+}
+
+.metrics-lens-browser {
+  position: sticky;
+  top: var(--size-4-4);
+}
+
+.metrics-lens-browser-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
+  margin-top: var(--size-4-3);
+}
+
+.metrics-lens-file-button {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--size-4-1);
+  width: 100%;
+  min-height: 44px;
+  padding: var(--size-4-3);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background-color: var(--background-primary);
+  color: var(--text-normal);
+  text-align: left;
+}
+
+.metrics-lens-file-button:hover,
+.metrics-lens-file-button:focus-visible {
+  border-color: var(--interactive-accent);
+  background-color: var(--background-primary-alt);
+}
+
+.metrics-lens-file-button.is-selected {
+  border-color: var(--interactive-accent);
+  background-color: color-mix(in srgb, var(--interactive-accent) 12%, var(--background-primary));
+}
+
+.metrics-lens-file-button-header {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--size-4-2);
+}
+
+.metrics-lens-file-button-name {
+  font-weight: var(--font-semibold);
+}
+
+.metrics-lens-file-button-path,
+.metrics-lens-file-button-meta,
+.metrics-lens-file-button-size {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
 }
 
 .metrics-lens-badge {
@@ -157,4 +226,14 @@
   background-color: var(--background-primary-alt);
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+@media (max-width: 900px) {
+  .metrics-lens-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .metrics-lens-browser {
+    position: static;
+  }
 }

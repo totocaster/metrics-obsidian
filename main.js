@@ -927,6 +927,18 @@ function formatMetricValue(row) {
   }
   return typeof unit === "string" ? `${value} ${unit}` : `${value}`;
 }
+function formatFileSize(bytes) {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+function formatModifiedAt(timestamp) {
+  return new Date(timestamp).toLocaleString();
+}
 function renderIssueList(container, row) {
   if (row.issues.length === 0) {
     return;
@@ -966,6 +978,7 @@ function renderRecord(container, row, plugin, file, referencePrefix) {
   if (row.metric?.id && row.metric.ts && row.metric.key && typeof row.metric.value === "number" && row.metric.source) {
     const actions = rowEl.createDiv({ cls: "metrics-lens-actions" });
     const editButton = actions.createEl("button", { text: "Edit" });
+    editButton.type = "button";
     editButton.setAttribute("aria-label", `Edit ${row.metric.key}`);
     editButton.addEventListener("click", () => {
       plugin.openEditRecordModal(file, row.metric);
@@ -974,6 +987,7 @@ function renderRecord(container, row, plugin, file, referencePrefix) {
       cls: "mod-warning",
       text: "Delete"
     });
+    deleteButton.type = "button";
     deleteButton.setAttribute("aria-label", `Delete ${row.metric.key}`);
     deleteButton.addEventListener("click", () => {
       plugin.confirmDeleteRecord(file, row.metric);
@@ -983,6 +997,72 @@ function renderRecord(container, row, plugin, file, referencePrefix) {
   if (!row.metric?.key) {
     rowEl.createEl("pre", { cls: "metrics-lens-record-raw", text: row.rawLine });
   }
+}
+function renderBrowser(container, plugin, files, selectedFile, leaf) {
+  const browserPanel = container.createDiv({ cls: ["metrics-lens-panel", "metrics-lens-browser"] });
+  browserPanel.createEl("h2", { text: "Metrics files" });
+  const browserSummary = browserPanel.createEl("ul");
+  browserSummary.createEl("li", { text: `Metrics root: ${plugin.settings.metricsRoot}` });
+  browserSummary.createEl("li", { text: `Files in scope: ${files.length}` });
+  browserSummary.createEl("li", {
+    text: selectedFile ? `Selected: ${selectedFile.path}` : "Selected: none"
+  });
+  if (files.length === 0) {
+    browserPanel.createEl("p", {
+      text: "No metrics files were found under the configured metrics root."
+    });
+    return;
+  }
+  const browserList = browserPanel.createDiv({ cls: "metrics-lens-browser-list" });
+  files.forEach((file) => {
+    const isSelected = selectedFile?.path === file.path;
+    const button = browserList.createEl("button", {
+      cls: ["metrics-lens-file-button", isSelected ? "is-selected" : ""]
+    });
+    button.type = "button";
+    button.setAttribute(
+      "aria-label",
+      `Open ${logicalMetricsBaseName(file.name, plugin.settings.supportedExtensions)} metrics file`
+    );
+    button.addEventListener("click", () => {
+      void plugin.openMetricsFile(file, leaf);
+    });
+    const fileHeader = button.createDiv({ cls: "metrics-lens-file-button-header" });
+    fileHeader.createSpan({
+      cls: "metrics-lens-file-button-name",
+      text: capitalizeDisplayName(logicalMetricsBaseName(file.name, plugin.settings.supportedExtensions))
+    });
+    fileHeader.createSpan({
+      cls: "metrics-lens-file-button-size",
+      text: formatFileSize(file.stat.size)
+    });
+    button.createDiv({
+      cls: "metrics-lens-file-button-path",
+      text: file.path
+    });
+    button.createDiv({
+      cls: "metrics-lens-file-button-meta",
+      text: `Updated ${formatModifiedAt(file.stat.mtime)}`
+    });
+  });
+}
+function renderScopePanel(container) {
+  const scopePanel = container.createDiv({ cls: "metrics-lens-panel" });
+  scopePanel.createEl("h2", { text: "Current scope" });
+  const scopeList = scopePanel.createEl("ul");
+  scopeList.createEl("li", { text: "Contract is locked around `*.metrics.ndjson` files." });
+  scopeList.createEl("li", { text: "Scaffold and file browser integration are working." });
+  scopeList.createEl("li", { text: "Current-file read, validation, and CRUD are working." });
+  scopeList.createEl("li", { text: "Multi-file browsing inside the plugin is now working." });
+}
+function renderDeferredPanel(container) {
+  const deferredPanel = container.createDiv({ cls: "metrics-lens-panel" });
+  deferredPanel.createEl("h2", { text: "Deferred" });
+  const deferredList = deferredPanel.createEl("ul");
+  deferredList.createEl("li", { text: "Ingestion and provider pipelines" });
+  deferredList.createEl("li", { text: "Caching and hidden databases" });
+  deferredList.createEl("li", { text: "Charts, filters, and saved views" });
+  deferredList.createEl("li", { text: "Notes and documents beyond metric references" });
 }
 var MetricsFileView = class extends import_obsidian3.TextFileView {
   constructor(leaf, plugin) {
@@ -1029,21 +1109,39 @@ var MetricsFileView = class extends import_obsidian3.TextFileView {
   render() {
     this.contentEl.empty();
     const container = this.contentEl.createDiv({ cls: "metrics-lens-view" });
-    const analysis = analyzeMetricsData(this.data ?? "");
+    const files = this.plugin.listMetricsFiles();
     const status = container.createDiv({ cls: "metrics-lens-status" });
-    status.setText(
-      this.file ? "Metrics file view is active. Full CRUD lens is the next implementation step." : "No metrics file is open. Open a .metrics.ndjson file from the file browser."
-    );
+    if (this.file) {
+      status.setText(
+        `Viewing ${logicalMetricsBaseName(this.file.name, this.plugin.settings.supportedExtensions)}. Select another metrics file from the browser or edit records below.`
+      );
+    } else if (files.length > 0) {
+      status.setText("Select a metrics file from the browser to inspect and edit its records.");
+    } else {
+      status.setText("No metrics files are available in the configured metrics root.");
+    }
+    const layout = container.createDiv({ cls: "metrics-lens-layout" });
+    renderBrowser(layout, this.plugin, files, this.file, this.leaf);
+    const main = layout.createDiv({ cls: "metrics-lens-main" });
     if (!this.file) {
-      const emptyPanel = container.createDiv({ cls: "metrics-lens-panel" });
-      emptyPanel.createEl("h2", { text: "File browser integration" });
-      const emptyList = emptyPanel.createEl("ul");
-      emptyList.createEl("li", { text: "Compound extension registered: metrics.ndjson" });
-      emptyList.createEl("li", { text: "File browser should show logical file names without the suffix" });
-      emptyList.createEl("li", { text: "Capitalization in the sidebar follows the actual file name on disk" });
+      const emptyPanel = main.createDiv({ cls: "metrics-lens-panel" });
+      emptyPanel.createEl("h2", { text: "Select a file" });
+      emptyPanel.createEl("p", {
+        text: files.length > 0 ? "Choose a metrics file from the browser to inspect validation, references, and record-level CRUD." : "Add one or more `*.metrics.ndjson` files under the configured metrics root to start using the metrics lens."
+      });
+      renderScopePanel(main);
+      renderDeferredPanel(main);
       return;
     }
-    const filePanel = container.createDiv({ cls: "metrics-lens-panel" });
+    if (!this.plugin.isFileInMetricsRoot(this.file)) {
+      const outsideRootPanel = main.createDiv({ cls: "metrics-lens-panel" });
+      outsideRootPanel.createEl("h2", { text: "Outside metrics root" });
+      outsideRootPanel.createEl("p", {
+        text: `${this.file.path} is open in the metrics view, but it is outside the configured metrics root.`
+      });
+    }
+    const analysis = analyzeMetricsData(this.data ?? "");
+    const filePanel = main.createDiv({ cls: "metrics-lens-panel" });
     filePanel.createEl("h2", { text: "File" });
     const fileList = filePanel.createEl("ul");
     fileList.createEl("li", {
@@ -1075,6 +1173,7 @@ var MetricsFileView = class extends import_obsidian3.TextFileView {
       cls: "mod-cta",
       text: "Add record"
     });
+    createButton.type = "button";
     createButton.setAttribute("aria-label", "Add a metrics record to this file");
     createButton.addEventListener("click", () => {
       if (!this.file) {
@@ -1083,7 +1182,7 @@ var MetricsFileView = class extends import_obsidian3.TextFileView {
       this.plugin.openCreateRecordModal(this.file);
     });
     if (analysis.legacyRows > 0) {
-      const legacyPanel = container.createDiv({ cls: "metrics-lens-panel" });
+      const legacyPanel = main.createDiv({ cls: "metrics-lens-panel" });
       legacyPanel.createEl("h2", { text: "Legacy ids" });
       legacyPanel.createEl("p", {
         text: "This file still uses legacy rows without `id`. Stable CRUD and markdown references require an `id` on every row."
@@ -1093,6 +1192,7 @@ var MetricsFileView = class extends import_obsidian3.TextFileView {
         cls: "mod-cta",
         text: "Assign missing ids"
       });
+      assignButton.type = "button";
       assignButton.setAttribute("aria-label", "Assign missing ids in this metrics file");
       assignButton.addEventListener("click", () => {
         if (!this.file) {
@@ -1101,7 +1201,7 @@ var MetricsFileView = class extends import_obsidian3.TextFileView {
         void this.plugin.assignMissingIds(this.file);
       });
     }
-    const validationPanel = container.createDiv({ cls: "metrics-lens-panel" });
+    const validationPanel = main.createDiv({ cls: "metrics-lens-panel" });
     validationPanel.createEl("h2", { text: "Validation" });
     if (analysis.issueSummary.length === 0) {
       validationPanel.createSpan({ text: "No issues detected." });
@@ -1113,20 +1213,9 @@ var MetricsFileView = class extends import_obsidian3.TextFileView {
         item.createSpan({ text: `${summary.message} (${summary.count})` });
       });
     }
-    const scopePanel = container.createDiv({ cls: "metrics-lens-panel" });
-    scopePanel.createEl("h2", { text: "Current scope" });
-    const scopeList = scopePanel.createEl("ul");
-    scopeList.createEl("li", { text: "Contract" });
-    scopeList.createEl("li", { text: "Scaffold" });
-    scopeList.createEl("li", { text: "Lens over metrics files with CRUD next" });
-    const deferredPanel = container.createDiv({ cls: "metrics-lens-panel" });
-    deferredPanel.createEl("h2", { text: "Deferred" });
-    const deferredList = deferredPanel.createEl("ul");
-    deferredList.createEl("li", { text: "Ingestion and provider pipelines" });
-    deferredList.createEl("li", { text: "Caching and hidden databases" });
-    deferredList.createEl("li", { text: "Charts, filters, and saved views" });
-    deferredList.createEl("li", { text: "Notes and documents beyond metric references" });
-    const recordsPanel = container.createDiv({ cls: "metrics-lens-panel" });
+    renderScopePanel(main);
+    renderDeferredPanel(main);
+    const recordsPanel = main.createDiv({ cls: "metrics-lens-panel" });
     recordsPanel.createEl("h2", { text: "Records" });
     if (analysis.rows.length === 0) {
       recordsPanel.createSpan({ text: "This file has no metrics rows yet." });
@@ -1162,7 +1251,7 @@ var MetricsPlugin = class extends import_obsidian4.Plugin {
           return false;
         }
         if (!checking) {
-          void this.openFileInMetricsView(file, this.app.workspace.activeLeaf);
+          void this.openMetricsFile(file, this.app.workspace.activeLeaf);
         }
         return true;
       }
@@ -1221,6 +1310,9 @@ var MetricsPlugin = class extends import_obsidian4.Plugin {
       })
     );
     this.registerEvent(this.app.vault.on("modify", () => this.refreshOpenMetricsViews()));
+    this.registerEvent(this.app.vault.on("create", () => this.refreshOpenMetricsViews()));
+    this.registerEvent(this.app.vault.on("delete", () => this.refreshOpenMetricsViews()));
+    this.registerEvent(this.app.vault.on("rename", () => this.refreshOpenMetricsViews()));
     this.app.workspace.onLayoutReady(() => {
       const activeFile = this.app.workspace.getActiveFile();
       this.queueAutoOpen(activeFile, this.app.workspace.activeLeaf);
@@ -1256,7 +1348,7 @@ var MetricsPlugin = class extends import_obsidian4.Plugin {
   async activateView() {
     const activeFile = this.app.workspace.getActiveFile();
     if (activeFile && this.isMetricsFile(activeFile)) {
-      await this.openFileInMetricsView(activeFile, this.app.workspace.activeLeaf);
+      await this.openMetricsFile(activeFile, this.app.workspace.activeLeaf);
       return;
     }
     const existingLeaf = this.app.workspace.getLeavesOfType(METRICS_VIEW_TYPE)[0];
@@ -1278,6 +1370,12 @@ var MetricsPlugin = class extends import_obsidian4.Plugin {
       }
     });
     this.queueFileExplorerLabelSync();
+  }
+  listMetricsFiles() {
+    return this.app.vault.getFiles().filter((file) => this.isMetricsFile(file) && this.isMetricsRootPath(file.path)).sort((left, right) => left.path.localeCompare(right.path));
+  }
+  isFileInMetricsRoot(file) {
+    return this.isMetricsRootPath(file.path);
   }
   async assignMissingIds(file) {
     let assigned = 0;
@@ -1370,6 +1468,17 @@ var MetricsPlugin = class extends import_obsidian4.Plugin {
     }
     void this.deleteRecord(file, record.id);
   }
+  async openMetricsFile(file, leaf) {
+    if (!leaf) {
+      new import_obsidian4.Notice("No active pane is available.");
+      return;
+    }
+    await leaf.setViewState({
+      type: METRICS_VIEW_TYPE,
+      state: { file: file.path },
+      active: true
+    });
+  }
   handleMutationError(error) {
     if (error instanceof MetricsMutationError) {
       new import_obsidian4.Notice(error.message);
@@ -1404,17 +1513,6 @@ var MetricsPlugin = class extends import_obsidian4.Plugin {
       path && this.settings.supportedExtensions.some((extension) => path.endsWith(extension))
     );
   }
-  async openFileInMetricsView(file, leaf) {
-    if (!leaf) {
-      new import_obsidian4.Notice("No active pane is available.");
-      return;
-    }
-    await leaf.setViewState({
-      type: METRICS_VIEW_TYPE,
-      state: { file: file.path },
-      active: true
-    });
-  }
   async maybeAutoOpenFile(file, leaf) {
     if (!file || !this.isMetricsFile(file)) {
       return;
@@ -1431,7 +1529,7 @@ var MetricsPlugin = class extends import_obsidian4.Plugin {
     if (!visibleFile || visibleFile.path !== file.path) {
       return;
     }
-    await this.openFileInMetricsView(file, targetLeaf);
+    await this.openMetricsFile(file, targetLeaf);
   }
   queueAutoOpen(file, leaf) {
     window.setTimeout(() => {
@@ -1515,5 +1613,12 @@ var MetricsPlugin = class extends import_obsidian4.Plugin {
       contentEl.textContent = contentEl.dataset.metricsOriginalLabel;
       delete contentEl.dataset.metricsOriginalLabel;
     });
+  }
+  isMetricsRootPath(path) {
+    const metricsRoot = this.settings.metricsRoot.trim();
+    if (metricsRoot.length === 0) {
+      return true;
+    }
+    return path === metricsRoot || path.startsWith(`${metricsRoot}/`);
   }
 };

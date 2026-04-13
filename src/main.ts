@@ -40,7 +40,7 @@ export default class MetricsPlugin extends Plugin {
         }
 
         if (!checking) {
-          void this.openFileInMetricsView(file, this.app.workspace.activeLeaf);
+          void this.openMetricsFile(file, this.app.workspace.activeLeaf);
         }
 
         return true;
@@ -112,6 +112,9 @@ export default class MetricsPlugin extends Plugin {
     );
 
     this.registerEvent(this.app.vault.on("modify", () => this.refreshOpenMetricsViews()));
+    this.registerEvent(this.app.vault.on("create", () => this.refreshOpenMetricsViews()));
+    this.registerEvent(this.app.vault.on("delete", () => this.refreshOpenMetricsViews()));
+    this.registerEvent(this.app.vault.on("rename", () => this.refreshOpenMetricsViews()));
 
     this.app.workspace.onLayoutReady(() => {
       const activeFile = this.app.workspace.getActiveFile();
@@ -154,7 +157,7 @@ export default class MetricsPlugin extends Plugin {
   async activateView(): Promise<void> {
     const activeFile = this.app.workspace.getActiveFile();
     if (activeFile && this.isMetricsFile(activeFile)) {
-      await this.openFileInMetricsView(activeFile, this.app.workspace.activeLeaf);
+      await this.openMetricsFile(activeFile, this.app.workspace.activeLeaf);
       return;
     }
 
@@ -182,6 +185,17 @@ export default class MetricsPlugin extends Plugin {
     });
 
     this.queueFileExplorerLabelSync();
+  }
+
+  listMetricsFiles(): TFile[] {
+    return this.app.vault
+      .getFiles()
+      .filter((file) => this.isMetricsFile(file) && this.isMetricsRootPath(file.path))
+      .sort((left, right) => left.path.localeCompare(right.path));
+  }
+
+  isFileInMetricsRoot(file: TFile): boolean {
+    return this.isMetricsRootPath(file.path);
   }
 
   async assignMissingIds(file: TFile): Promise<void> {
@@ -294,6 +308,19 @@ export default class MetricsPlugin extends Plugin {
     void this.deleteRecord(file, record.id);
   }
 
+  async openMetricsFile(file: TFile, leaf: WorkspaceLeaf | null): Promise<void> {
+    if (!leaf) {
+      new Notice("No active pane is available.");
+      return;
+    }
+
+    await leaf.setViewState({
+      type: METRICS_VIEW_TYPE,
+      state: { file: file.path },
+      active: true,
+    });
+  }
+
   private handleMutationError(error: unknown): void {
     if (error instanceof MetricsMutationError) {
       new Notice(error.message);
@@ -342,19 +369,6 @@ export default class MetricsPlugin extends Plugin {
     );
   }
 
-  private async openFileInMetricsView(file: TFile, leaf: WorkspaceLeaf | null): Promise<void> {
-    if (!leaf) {
-      new Notice("No active pane is available.");
-      return;
-    }
-
-    await leaf.setViewState({
-      type: METRICS_VIEW_TYPE,
-      state: { file: file.path },
-      active: true,
-    });
-  }
-
   private async maybeAutoOpenFile(file: TFile | null, leaf: WorkspaceLeaf | null): Promise<void> {
     if (!file || !this.isMetricsFile(file)) {
       return;
@@ -375,7 +389,7 @@ export default class MetricsPlugin extends Plugin {
       return;
     }
 
-    await this.openFileInMetricsView(file, targetLeaf);
+    await this.openMetricsFile(file, targetLeaf);
   }
 
   private queueAutoOpen(file: TFile | null, leaf?: WorkspaceLeaf | null): void {
@@ -486,5 +500,14 @@ export default class MetricsPlugin extends Plugin {
       contentEl.textContent = contentEl.dataset.metricsOriginalLabel;
       delete contentEl.dataset.metricsOriginalLabel;
     });
+  }
+
+  private isMetricsRootPath(path: string): boolean {
+    const metricsRoot = this.settings.metricsRoot.trim();
+    if (metricsRoot.length === 0) {
+      return true;
+    }
+
+    return path === metricsRoot || path.startsWith(`${metricsRoot}/`);
   }
 }
