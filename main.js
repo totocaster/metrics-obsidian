@@ -114,7 +114,7 @@ function toMetricReference(id, prefix = METRIC_REFERENCE_PREFIX) {
 
 // src/view.ts
 var METRICS_VIEW_TYPE = "metrics-file-view";
-function stripMetricsSuffix(fileName, extensions) {
+function logicalMetricsBaseName(fileName, extensions) {
   const matchingExtension = extensions.find((extension) => fileName.endsWith(extension));
   if (matchingExtension) {
     return fileName.slice(0, -matchingExtension.length);
@@ -160,7 +160,7 @@ var MetricsFileView = class extends import_obsidian2.TextFileView {
     if (!this.file) {
       return "Metrics";
     }
-    const baseName = stripMetricsSuffix(this.file.name, this.plugin.settings.supportedExtensions);
+    const baseName = logicalMetricsBaseName(this.file.name, this.plugin.settings.supportedExtensions);
     return capitalizeDisplayName(baseName);
   }
   getIcon() {
@@ -209,7 +209,7 @@ var MetricsFileView = class extends import_obsidian2.TextFileView {
     filePanel.createEl("h2", { text: "File" });
     const fileList = filePanel.createEl("ul");
     fileList.createEl("li", {
-      text: `Display name: ${capitalizeDisplayName(stripMetricsSuffix(this.file.name, this.plugin.settings.supportedExtensions))}`
+      text: `Display name: ${capitalizeDisplayName(logicalMetricsBaseName(this.file.name, this.plugin.settings.supportedExtensions))}`
     });
     fileList.createEl("li", {
       text: `Path: ${this.file.path}`
@@ -250,16 +250,16 @@ var MetricsFileView = class extends import_obsidian2.TextFileView {
 var MetricsPlugin = class extends import_obsidian3.Plugin {
   settings = DEFAULT_SETTINGS;
   suppressedAutoOpenPaths = /* @__PURE__ */ new Set();
+  fileExplorerObserver = null;
+  fileExplorerSyncQueued = false;
   async onload() {
     await this.loadSettings();
     this.registerView(
       METRICS_VIEW_TYPE,
       (leaf) => new MetricsFileView(leaf, this)
     );
-    this.registerExtensions(
-      this.settings.supportedExtensions.map((extension) => extension.replace(/^\./, "")),
-      METRICS_VIEW_TYPE
-    );
+    this.registerExtensions(this.metricsViewExtensions(), METRICS_VIEW_TYPE);
+    this.registerExtensions(this.fileBrowserFallbackExtensions(), "markdown");
     this.addCommand({
       id: "open-current-file",
       name: "Open current metrics file",
@@ -303,9 +303,14 @@ var MetricsPlugin = class extends import_obsidian3.Plugin {
     this.app.workspace.onLayoutReady(() => {
       const activeFile = this.app.workspace.getActiveFile();
       this.queueAutoOpen(activeFile, this.app.workspace.activeLeaf);
+      this.installFileExplorerObserver();
+      this.queueFileExplorerLabelSync();
     });
   }
   async onunload() {
+    this.fileExplorerObserver?.disconnect();
+    this.fileExplorerObserver = null;
+    this.restoreFileExplorerLabels();
     for (const leaf of this.app.workspace.getLeavesOfType(METRICS_VIEW_TYPE)) {
       const view = leaf.view;
       if (!(view instanceof MetricsFileView) || !view.file) {
@@ -351,13 +356,29 @@ var MetricsPlugin = class extends import_obsidian3.Plugin {
         view.refreshView();
       }
     });
+    this.queueFileExplorerLabelSync();
   }
   suppressAutoOpenForPath(path) {
     this.suppressedAutoOpenPaths.add(path);
   }
+  metricsViewExtensions() {
+    return this.settings.supportedExtensions.map((extension) => extension.replace(/^\./, "")).filter((extension) => extension.length > 0);
+  }
+  fileBrowserFallbackExtensions() {
+    return Array.from(
+      new Set(
+        this.metricsViewExtensions().map((extension) => extension.split(".").pop() ?? "").filter((extension) => extension.length > 0)
+      )
+    );
+  }
   isMetricsFile(file) {
     return Boolean(
       file && this.settings.supportedExtensions.some((extension) => file.path.endsWith(extension))
+    );
+  }
+  isMetricsPath(path) {
+    return Boolean(
+      path && this.settings.supportedExtensions.some((extension) => path.endsWith(extension))
     );
   }
   async openFileInMetricsView(file, leaf) {
@@ -416,5 +437,60 @@ var MetricsPlugin = class extends import_obsidian3.Plugin {
       return view.file ?? null;
     }
     return null;
+  }
+  installFileExplorerObserver() {
+    if (this.fileExplorerObserver) {
+      this.fileExplorerObserver.disconnect();
+    }
+    this.fileExplorerObserver = new MutationObserver(() => {
+      this.queueFileExplorerLabelSync();
+    });
+    this.fileExplorerObserver.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+  }
+  queueFileExplorerLabelSync() {
+    if (this.fileExplorerSyncQueued) {
+      return;
+    }
+    this.fileExplorerSyncQueued = true;
+    window.requestAnimationFrame(() => {
+      this.fileExplorerSyncQueued = false;
+      this.syncFileExplorerLabels();
+    });
+  }
+  syncFileExplorerLabels() {
+    const titleEls = document.querySelectorAll(".nav-file-title[data-path]");
+    titleEls.forEach((titleEl) => {
+      const path = titleEl.getAttribute("data-path");
+      const contentEl = titleEl.querySelector(".nav-file-title-content") ?? titleEl.querySelector(".tree-item-inner");
+      if (!path || !contentEl || titleEl.querySelector("input")) {
+        return;
+      }
+      if (!this.isMetricsPath(path)) {
+        if (contentEl.dataset.metricsOriginalLabel !== void 0) {
+          contentEl.textContent = contentEl.dataset.metricsOriginalLabel;
+          delete contentEl.dataset.metricsOriginalLabel;
+        }
+        return;
+      }
+      if (contentEl.dataset.metricsOriginalLabel === void 0) {
+        contentEl.dataset.metricsOriginalLabel = contentEl.textContent ?? "";
+      }
+      const fileName = path.split("/").pop() ?? path;
+      contentEl.textContent = logicalMetricsBaseName(fileName, this.settings.supportedExtensions);
+    });
+  }
+  restoreFileExplorerLabels() {
+    const titleEls = document.querySelectorAll(".nav-file-title[data-path]");
+    titleEls.forEach((titleEl) => {
+      const contentEl = titleEl.querySelector(".nav-file-title-content") ?? titleEl.querySelector(".tree-item-inner");
+      if (!contentEl || contentEl.dataset.metricsOriginalLabel === void 0) {
+        return;
+      }
+      contentEl.textContent = contentEl.dataset.metricsOriginalLabel;
+      delete contentEl.dataset.metricsOriginalLabel;
+    });
   }
 };

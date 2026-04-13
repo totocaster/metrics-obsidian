@@ -5,8 +5,10 @@
 - Overall status: draft v0.1
 - Contract status: locked for scaffold and CRUD foundation
 - Scaffold status: bootstrapped in this repository
-- Current implementation status: plugin shell only; CRUD not implemented yet
-- Next phase after current scope: charts, filters, derived views, and richer browsing
+- Vault dev status: linked into the live `totocaster` vault for real-time testing
+- Current implementation status: file-backed metrics view is working; CRUD is not implemented yet
+- File browser status: `*.metrics.ndjson` files are routed into the plugin view and sidebar labels are normalized to logical metric dataset names
+- Next implementation phase: record parsing, validation, and CRUD over metric files
 
 ## Product
 
@@ -146,6 +148,8 @@ Unknown units are warnings, not fatal errors.
 ### Included
 
 - Obsidian plugin shell
+- file-backed metrics view for `*.metrics.ndjson`
+- file browser integration for compound metrics extensions
 - settings for metrics root, supported extensions, default write file, and reference prefix
 - direct file reads and writes via Obsidian APIs
 - in-memory working state only
@@ -164,6 +168,16 @@ Unknown units are warnings, not fatal errors.
 - desktop support: not desktop-only by contract
 
 The display name omits "Obsidian" to stay aligned with common community plugin naming guidance.
+
+## Progress notes
+
+- The plugin is scaffolded and builds successfully
+- The plugin is symlinked into the `totocaster` vault for live development
+- `metrics.ndjson` is registered as a compound extension for the metrics view
+- `ndjson` is registered as a file-browser fallback so metrics files remain visible in the sidebar
+- The plugin rewrites file browser labels so `withings.metrics.ndjson` appears as `withings`
+- The current file view is intentionally shallow: file summary, status, and raw preview only
+- The next meaningful milestone is moving from file shell to record-level read and mutation flows
 
 ## Open questions
 

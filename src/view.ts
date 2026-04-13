@@ -5,7 +5,7 @@ import type MetricsPlugin from "./main";
 
 export const METRICS_VIEW_TYPE = "metrics-file-view";
 
-function stripMetricsSuffix(fileName: string, extensions: string[]): string {
+export function logicalMetricsBaseName(fileName: string, extensions: string[]): string {
   const matchingExtension = extensions.find((extension) => fileName.endsWith(extension));
   if (matchingExtension) {
     return fileName.slice(0, -matchingExtension.length);
@@ -72,7 +72,7 @@ export class MetricsFileView extends TextFileView {
       return "Metrics";
     }
 
-    const baseName = stripMetricsSuffix(this.file.name, this.plugin.settings.supportedExtensions);
+    const baseName = logicalMetricsBaseName(this.file.name, this.plugin.settings.supportedExtensions);
     return capitalizeDisplayName(baseName);
   }
 
@@ -138,7 +138,7 @@ export class MetricsFileView extends TextFileView {
 
     const fileList = filePanel.createEl("ul");
     fileList.createEl("li", {
-      text: `Display name: ${capitalizeDisplayName(stripMetricsSuffix(this.file.name, this.plugin.settings.supportedExtensions))}`,
+      text: `Display name: ${capitalizeDisplayName(logicalMetricsBaseName(this.file.name, this.plugin.settings.supportedExtensions))}`,
     });
     fileList.createEl("li", {
       text: `Path: ${this.file.path}`,

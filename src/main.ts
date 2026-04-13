@@ -1,11 +1,13 @@
 import { FileView, Notice, Plugin, TFile, WorkspaceLeaf } from "obsidian";
 
 import { DEFAULT_SETTINGS, MetricsPluginSettings, MetricsSettingTab, normalizeMetricsSettings } from "./settings";
-import { METRICS_VIEW_TYPE, MetricsFileView } from "./view";
+import { logicalMetricsBaseName, METRICS_VIEW_TYPE, MetricsFileView } from "./view";
 
 export default class MetricsPlugin extends Plugin {
   settings: MetricsPluginSettings = DEFAULT_SETTINGS;
   private readonly suppressedAutoOpenPaths = new Set<string>();
+  private fileExplorerObserver: MutationObserver | null = null;
+  private fileExplorerSyncQueued = false;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -15,10 +17,8 @@ export default class MetricsPlugin extends Plugin {
       (leaf: WorkspaceLeaf) => new MetricsFileView(leaf, this),
     );
 
-    this.registerExtensions(
-      this.settings.supportedExtensions.map((extension) => extension.replace(/^\./, "")),
-      METRICS_VIEW_TYPE,
-    );
+    this.registerExtensions(this.metricsViewExtensions(), METRICS_VIEW_TYPE);
+    this.registerExtensions(this.fileBrowserFallbackExtensions(), "markdown");
 
     this.addCommand({
       id: "open-current-file",
@@ -72,10 +72,16 @@ export default class MetricsPlugin extends Plugin {
     this.app.workspace.onLayoutReady(() => {
       const activeFile = this.app.workspace.getActiveFile();
       this.queueAutoOpen(activeFile, this.app.workspace.activeLeaf);
+      this.installFileExplorerObserver();
+      this.queueFileExplorerLabelSync();
     });
   }
 
   async onunload(): Promise<void> {
+    this.fileExplorerObserver?.disconnect();
+    this.fileExplorerObserver = null;
+    this.restoreFileExplorerLabels();
+
     for (const leaf of this.app.workspace.getLeavesOfType(METRICS_VIEW_TYPE)) {
       const view = leaf.view;
       if (!(view instanceof MetricsFileView) || !view.file) {
@@ -130,16 +136,41 @@ export default class MetricsPlugin extends Plugin {
         view.refreshView();
       }
     });
+
+    this.queueFileExplorerLabelSync();
   }
 
   private suppressAutoOpenForPath(path: string): void {
     this.suppressedAutoOpenPaths.add(path);
   }
 
+  private metricsViewExtensions(): string[] {
+    return this.settings.supportedExtensions
+      .map((extension) => extension.replace(/^\./, ""))
+      .filter((extension) => extension.length > 0);
+  }
+
+  private fileBrowserFallbackExtensions(): string[] {
+    return Array.from(
+      new Set(
+        this.metricsViewExtensions()
+          .map((extension) => extension.split(".").pop() ?? "")
+          .filter((extension) => extension.length > 0),
+      ),
+    );
+  }
+
   private isMetricsFile(file: TFile | null): file is TFile {
     return Boolean(
       file &&
         this.settings.supportedExtensions.some((extension) => file.path.endsWith(extension)),
+    );
+  }
+
+  private isMetricsPath(path: string | null): boolean {
+    return Boolean(
+      path &&
+        this.settings.supportedExtensions.some((extension) => path.endsWith(extension)),
     );
   }
 
@@ -213,5 +244,79 @@ export default class MetricsPlugin extends Plugin {
     }
 
     return null;
+  }
+
+  private installFileExplorerObserver(): void {
+    if (this.fileExplorerObserver) {
+      this.fileExplorerObserver.disconnect();
+    }
+
+    this.fileExplorerObserver = new MutationObserver(() => {
+      this.queueFileExplorerLabelSync();
+    });
+
+    this.fileExplorerObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+    });
+  }
+
+  private queueFileExplorerLabelSync(): void {
+    if (this.fileExplorerSyncQueued) {
+      return;
+    }
+
+    this.fileExplorerSyncQueued = true;
+    window.requestAnimationFrame(() => {
+      this.fileExplorerSyncQueued = false;
+      this.syncFileExplorerLabels();
+    });
+  }
+
+  private syncFileExplorerLabels(): void {
+    const titleEls = document.querySelectorAll<HTMLElement>(".nav-file-title[data-path]");
+
+    titleEls.forEach((titleEl) => {
+      const path = titleEl.getAttribute("data-path");
+      const contentEl =
+        titleEl.querySelector<HTMLElement>(".nav-file-title-content") ??
+        titleEl.querySelector<HTMLElement>(".tree-item-inner");
+
+      if (!path || !contentEl || titleEl.querySelector("input")) {
+        return;
+      }
+
+      if (!this.isMetricsPath(path)) {
+        if (contentEl.dataset.metricsOriginalLabel !== undefined) {
+          contentEl.textContent = contentEl.dataset.metricsOriginalLabel;
+          delete contentEl.dataset.metricsOriginalLabel;
+        }
+        return;
+      }
+
+      if (contentEl.dataset.metricsOriginalLabel === undefined) {
+        contentEl.dataset.metricsOriginalLabel = contentEl.textContent ?? "";
+      }
+
+      const fileName = path.split("/").pop() ?? path;
+      contentEl.textContent = logicalMetricsBaseName(fileName, this.settings.supportedExtensions);
+    });
+  }
+
+  private restoreFileExplorerLabels(): void {
+    const titleEls = document.querySelectorAll<HTMLElement>(".nav-file-title[data-path]");
+
+    titleEls.forEach((titleEl) => {
+      const contentEl =
+        titleEl.querySelector<HTMLElement>(".nav-file-title-content") ??
+        titleEl.querySelector<HTMLElement>(".tree-item-inner");
+
+      if (!contentEl || contentEl.dataset.metricsOriginalLabel === undefined) {
+        return;
+      }
+
+      contentEl.textContent = contentEl.dataset.metricsOriginalLabel;
+      delete contentEl.dataset.metricsOriginalLabel;
+    });
   }
 }
