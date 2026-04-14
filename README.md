@@ -13,6 +13,7 @@ Metrics is a file-first Obsidian plugin for working with `*.metrics.ndjson` data
 - Supports metrics file create, rename, and delete
 - Renders records as a compact timeline with optional metric icons
 - Uses a catalog-backed registry for supported metric labels, units, icons, and formatting
+- Lets lists and dropdowns show either friendly metric names or canonical keys
 - Persists per-file filters, filter-bar visibility, sorting, grouping, and chart visibility
 - Adds interactive charts above the timeline using the same visible rows as the list
 - Copies stable plain-text metric references as `metric:<id>`
@@ -42,7 +43,7 @@ Example:
 
 ```json
 {"id":"01JV7RK8Q4X60M0E2N0A6QK61V","ts":"2026-04-14T08:30:00+04:00","key":"body.weight","value":105.6,"unit":"kg","source":"withings"}
-{"id":"01JV7RM60M9X1Y9G7TWJ3CF8ES","ts":"2026-04-14T09:10:00+04:00","key":"nutrition.calories","value":720,"unit":"kcal","source":"manual","note":"breakfast"}
+{"id":"01JV7RM60M9X1Y9G7TWJ3CF8ES","ts":"2026-04-14T09:10:00+04:00","key":"nutrition.energy_intake","value":720,"unit":"kcal","source":"manual","note":"breakfast"}
 ```
 
 Default conventions:
@@ -64,6 +65,8 @@ That catalog drives:
 - unit validation and per-metric allowed units
 - icon mapping
 - display formatting and authoring suggestions
+
+The current first-party catalog is intentionally shaped around the linked vault's real data surface, including Withings body composition metrics, WHOOP recovery and sleep metrics, manual nutrition intake, and medication dosage records.
 
 Unknown keys are still allowed by the file contract, but they are treated as outside the built-in catalog and surface as warnings instead of hard failures.
 

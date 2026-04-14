@@ -1,5 +1,6 @@
 import { App, PluginSettingTab, Setting, normalizePath } from "obsidian";
 
+import type { MetricNameDisplayMode } from "./metric-catalog";
 import type MetricsPlugin from "./main";
 import {
   normalizePersistedMetricsViewState,
@@ -8,6 +9,7 @@ import {
 
 export interface MetricsPluginSettings {
   defaultWriteFile: string;
+  metricNameDisplayMode: MetricNameDisplayMode;
   metricsRoot: string;
   persistedViewStateByPath: Record<string, PersistedMetricsViewState>;
   recordReferencePrefix: string;
@@ -17,6 +19,7 @@ export interface MetricsPluginSettings {
 
 export const DEFAULT_SETTINGS: MetricsPluginSettings = {
   defaultWriteFile: "Metrics/All.metrics.ndjson",
+  metricNameDisplayMode: "friendly",
   metricsRoot: "Metrics",
   persistedViewStateByPath: {},
   recordReferencePrefix: "metric:",
@@ -39,6 +42,8 @@ export function normalizeMetricsSettings(
 
   return {
     defaultWriteFile: normalizePath(settings.defaultWriteFile ?? DEFAULT_SETTINGS.defaultWriteFile),
+    metricNameDisplayMode:
+      settings.metricNameDisplayMode === "key" ? "key" : DEFAULT_SETTINGS.metricNameDisplayMode,
     metricsRoot: normalizePath(settings.metricsRoot ?? DEFAULT_SETTINGS.metricsRoot),
     persistedViewStateByPath,
     recordReferencePrefix:
@@ -146,6 +151,21 @@ export class MetricsSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
           this.plugin.refreshOpenMetricsViews();
         });
+      });
+
+    new Setting(containerEl)
+      .setName("Metric label display")
+      .setDesc("Choose whether lists and dropdowns show friendly metric names or canonical keys.")
+      .addDropdown((dropdown) => {
+        dropdown
+          .addOption("friendly", "Friendly names")
+          .addOption("key", "Canonical keys")
+          .setValue(this.plugin.settings.metricNameDisplayMode)
+          .onChange(async (value) => {
+            this.plugin.settings.metricNameDisplayMode = value === "key" ? "key" : "friendly";
+            await this.plugin.saveSettings();
+            this.plugin.refreshOpenMetricsViews();
+          });
       });
   }
 }

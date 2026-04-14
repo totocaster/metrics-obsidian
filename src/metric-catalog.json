@@ -27,20 +27,29 @@
     }
   },
   "metrics": {
-    "activity.strain": {
-      "allowedUnits": ["score"],
-      "category": "activity",
-      "defaultUnit": "score",
-      "fractionDigits": 0,
-      "label": "Activity strain"
-    },
-    "body.body_fat_pct": {
-      "allowedUnits": ["percent"],
+    "body.fat_free_mass": {
+      "allowedUnits": ["kg"],
       "category": "body",
-      "defaultUnit": "percent",
+      "defaultUnit": "kg",
+      "fractionDigits": 1,
+      "iconCandidates": ["dumbbell", "activity"],
+      "label": "Fat-free mass"
+    },
+    "body.fat_mass": {
+      "allowedUnits": ["kg"],
+      "category": "body",
+      "defaultUnit": "kg",
+      "fractionDigits": 1,
+      "iconCandidates": ["scale", "activity"],
+      "label": "Fat mass"
+    },
+    "body.fat_percentage": {
+      "allowedUnits": ["%"],
+      "category": "body",
+      "defaultUnit": "%",
       "fractionDigits": 1,
       "iconCandidates": ["percent", "activity"],
-      "label": "Body fat"
+      "label": "Body fat percentage"
     },
     "body.weight": {
       "allowedUnits": ["kg"],
@@ -58,15 +67,39 @@
       "iconCandidates": ["syringe", "pill"],
       "label": "Semaglutide dose"
     },
-    "nutrition.calories": {
+    "nutrition.energy_intake": {
       "allowedUnits": ["kcal"],
       "category": "nutrition",
       "defaultUnit": "kcal",
       "fractionDigits": 0,
       "iconCandidates": ["flame", "utensils"],
-      "label": "Calories"
+      "label": "Energy intake"
     },
-    "recovery.resting_hr": {
+    "recovery.heart_rate_variability": {
+      "allowedUnits": ["ms"],
+      "category": "recovery",
+      "defaultUnit": "ms",
+      "fractionDigits": 1,
+      "iconCandidates": ["heart-pulse", "heart", "activity"],
+      "label": "Heart rate variability"
+    },
+    "recovery.oxygen_saturation": {
+      "allowedUnits": ["%"],
+      "category": "recovery",
+      "defaultUnit": "%",
+      "fractionDigits": 1,
+      "iconCandidates": ["heart", "activity"],
+      "label": "Oxygen saturation"
+    },
+    "recovery.respiratory_rate": {
+      "allowedUnits": ["br/min"],
+      "category": "recovery",
+      "defaultUnit": "br/min",
+      "fractionDigits": 2,
+      "iconCandidates": ["wind", "activity"],
+      "label": "Respiratory rate"
+    },
+    "recovery.resting_heart_rate": {
       "allowedUnits": ["bpm"],
       "category": "recovery",
       "defaultUnit": "bpm",
@@ -74,43 +107,73 @@
       "iconCandidates": ["heart-pulse", "heart", "activity"],
       "label": "Resting heart rate"
     },
-    "recovery.score": {
-      "allowedUnits": ["score", "percent"],
+    "recovery.skin_temperature": {
+      "allowedUnits": ["Cel"],
       "category": "recovery",
-      "defaultUnit": "score",
-      "fractionDigits": 0,
-      "iconCandidates": ["battery-full", "battery", "heart", "activity"],
-      "label": "Recovery score"
+      "defaultUnit": "Cel",
+      "fractionDigits": 1,
+      "iconCandidates": ["thermometer", "activity"],
+      "label": "Skin temperature"
     },
     "sleep.duration": {
-      "allowedUnits": ["hours", "min", "sec"],
+      "allowedUnits": ["h", "min", "s"],
       "category": "sleep",
       "defaultUnit": "min",
       "fractionDigits": 0,
       "iconCandidates": ["moon-star", "moon", "bed"],
       "label": "Sleep duration"
     },
-    "sleep.performance": {
-      "allowedUnits": ["score", "percent"],
+    "sleep.efficiency": {
+      "allowedUnits": ["%"],
       "category": "sleep",
+      "defaultUnit": "%",
+      "fractionDigits": 1,
+      "iconCandidates": ["bed", "moon", "activity"],
+      "label": "Sleep efficiency"
+    },
+    "whoop.day_strain": {
+      "allowedUnits": ["score"],
+      "category": "activity",
       "defaultUnit": "score",
+      "fractionDigits": 2,
+      "iconCandidates": ["gauge", "activity", "zap"],
+      "label": "WHOOP strain"
+    },
+    "whoop.recovery_score": {
+      "allowedUnits": ["%"],
+      "category": "recovery",
+      "defaultUnit": "%",
+      "fractionDigits": 0,
+      "iconCandidates": ["battery-full", "battery", "heart", "activity"],
+      "label": "WHOOP recovery score"
+    },
+    "whoop.sleep_performance": {
+      "allowedUnits": ["%"],
+      "category": "sleep",
+      "defaultUnit": "%",
       "fractionDigits": 0,
       "iconCandidates": ["bed", "moon", "activity"],
-      "label": "Sleep performance"
+      "label": "WHOOP sleep performance"
     }
   },
   "units": {
-    "C": {
-      "aliases": ["c", "celsius"],
+    "%": {
+      "aliases": ["percent", "pct"],
+      "display": "%",
+      "fractionDigits": 1,
+      "label": "Percent"
+    },
+    "Cel": {
+      "aliases": ["c", "celsius", "°c"],
       "display": "\u00b0C",
       "fractionDigits": 1,
-      "label": "Celsius"
+      "label": "Degrees Celsius"
     },
-    "F": {
-      "aliases": ["f", "fahrenheit"],
+    "[degF]": {
+      "aliases": ["f", "fahrenheit", "\u00b0f"],
       "display": "\u00b0F",
       "fractionDigits": 1,
-      "label": "Fahrenheit"
+      "label": "Degrees Fahrenheit"
     },
     "bpm": {
       "aliases": [],
@@ -136,10 +199,10 @@
       "fractionDigits": 0,
       "label": "Grams"
     },
-    "hours": {
-      "aliases": ["hour", "hr", "hrs"],
+    "h": {
+      "aliases": ["hour", "hours", "hr", "hrs"],
       "display": "hr",
-      "durationUnit": "hours",
+      "durationUnit": "h",
       "label": "Hours"
     },
     "kcal": {
@@ -166,20 +229,20 @@
       "fractionDigits": 2,
       "label": "Milligrams"
     },
+    "mL": {
+      "aliases": ["ml", "milliliter", "milliliters"],
+      "display": "mL",
+      "fractionDigits": 0,
+      "label": "Milliliters"
+    },
     "min": {
       "aliases": ["minute", "minutes"],
       "display": "min",
       "durationUnit": "min",
       "label": "Minutes"
     },
-    "ml": {
-      "aliases": ["milliliter", "milliliters"],
-      "display": "ml",
-      "fractionDigits": 0,
-      "label": "Milliliters"
-    },
-    "mmHg": {
-      "aliases": ["mmhg"],
+    "mm[Hg]": {
+      "aliases": ["mmhg", "mmHg"],
       "display": "mmHg",
       "fractionDigits": 0,
       "label": "Millimeters of mercury"
@@ -190,22 +253,16 @@
       "fractionDigits": 0,
       "label": "Milliseconds"
     },
-    "percent": {
-      "aliases": ["%", "pct"],
-      "display": "%",
-      "fractionDigits": 1,
-      "label": "Percent"
-    },
     "score": {
       "aliases": [],
       "display": "score",
       "fractionDigits": 0,
       "label": "Score"
     },
-    "sec": {
-      "aliases": ["s", "second", "seconds"],
+    "s": {
+      "aliases": ["sec", "second", "seconds"],
       "display": "sec",
-      "durationUnit": "sec",
+      "durationUnit": "s",
       "label": "Seconds"
     }
   }

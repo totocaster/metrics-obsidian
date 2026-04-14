@@ -7,7 +7,9 @@ import type MetricsPlugin from "./main";
 import {
   compareMetricKeys,
   displayMetricKey,
+  displayMetricName,
   displayMetricOption,
+  type MetricNameDisplayMode,
 } from "./metric-catalog";
 import { metricIconForKey } from "./metric-icons";
 import {
@@ -231,9 +233,17 @@ function rowSearchText(row: ParsedMetricRow): string {
     .toLowerCase();
 }
 
+function alternateMetricLabel(metricKey: string, mode: MetricNameDisplayMode): string | null {
+  const alternateMode = mode === "friendly" ? "key" : "friendly";
+  const alternate = displayMetricName(metricKey, alternateMode);
+  const current = displayMetricName(metricKey, mode);
+  return alternate === current ? null : alternate;
+}
+
 function collectFilterValues(
   rows: ParsedMetricRow[],
   field: "key" | "source",
+  metricNameDisplayMode: MetricNameDisplayMode,
 ): string[] {
   const values = Array.from(
     new Set(
@@ -244,7 +254,9 @@ function collectFilterValues(
   );
 
   return values.sort((left, right) =>
-    field === "key" ? compareMetricKeys(left, right) : left.localeCompare(right),
+    field === "key"
+      ? compareMetricKeys(left, right, metricNameDisplayMode)
+      : left.localeCompare(right),
   );
 }
 
@@ -449,6 +461,7 @@ function groupRowsByDay(rows: ParsedMetricRow[]): MetricsRowGroup[] {
 function groupRowsByField(
   rows: ParsedMetricRow[],
   field: "key" | "source",
+  metricNameDisplayMode: MetricNameDisplayMode,
 ): MetricsRowGroup[] {
   const groups = new Map<string, ParsedMetricRow[]>();
 
@@ -467,21 +480,25 @@ function groupRowsByField(
           ? "No metric"
           : "No source"
         : field === "key"
-          ? displayMetricKey(key)
+          ? displayMetricName(key, metricNameDisplayMode)
           : key,
     key,
     rows: groupedRows,
   }));
 }
 
-function groupedRows(rows: ParsedMetricRow[], groupBy: MetricsGroupBy): MetricsRowGroup[] {
+function groupedRows(
+  rows: ParsedMetricRow[],
+  groupBy: MetricsGroupBy,
+  metricNameDisplayMode: MetricNameDisplayMode,
+): MetricsRowGroup[] {
   switch (groupBy) {
     case "day":
       return groupRowsByDay(rows);
     case "key":
-      return groupRowsByField(rows, "key");
+      return groupRowsByField(rows, "key", metricNameDisplayMode);
     case "source":
-      return groupRowsByField(rows, "source");
+      return groupRowsByField(rows, "source", metricNameDisplayMode);
     case "none":
     default:
       return [];
@@ -724,7 +741,8 @@ function renderRecord(
 
   const body = rowEl.createDiv({ cls: "metrics-lens-record-body" });
   const marker = body.createSpan({ cls: "metrics-lens-record-marker" });
-  const metricKeyLabel = displayMetricKey(row.metric?.key);
+  const metricDisplayMode = plugin.settings.metricNameDisplayMode;
+  const metricKeyLabel = displayMetricName(row.metric?.key, metricDisplayMode);
   const iconId =
     plugin.settings.showMetricIcons && typeof row.metric?.key === "string"
       ? metricIconForKey(row.metric.key)
@@ -747,8 +765,11 @@ function renderRecord(
     cls: "metrics-lens-record-key",
     text: metricKeyLabel,
   });
-  if (typeof row.metric?.key === "string" && row.metric.key !== metricKeyLabel) {
-    metricKeyEl.setAttribute("title", row.metric.key);
+  if (typeof row.metric?.key === "string") {
+    const alternateLabel = alternateMetricLabel(row.metric.key, metricDisplayMode);
+    if (alternateLabel) {
+      metricKeyEl.setAttribute("title", alternateLabel);
+    }
   }
 
   const metricValue = formatMetricValue(row);
@@ -1112,11 +1133,11 @@ export class MetricsFileView extends TextFileView {
 
     const analysis = analyzeMetricsData(this.data ?? "");
     const availableKeys = withSelectedFilterValue(
-      collectFilterValues(analysis.rows, "key"),
+      collectFilterValues(analysis.rows, "key", this.plugin.settings.metricNameDisplayMode),
       this.viewState.key,
     );
     const availableSources = withSelectedFilterValue(
-      collectFilterValues(analysis.rows, "source"),
+      collectFilterValues(analysis.rows, "source", this.plugin.settings.metricNameDisplayMode),
       this.viewState.source,
     );
     const normalizedViewState = this.normalizeViewState();
@@ -1158,7 +1179,11 @@ export class MetricsFileView extends TextFileView {
     } else {
       const recordsSection = container.createDiv({ cls: "metrics-lens-section" });
       if (this.viewState.groupBy !== "none") {
-        groupedRows(visibleRows, this.viewState.groupBy).forEach((group) => {
+        groupedRows(
+          visibleRows,
+          this.viewState.groupBy,
+          this.plugin.settings.metricNameDisplayMode,
+        ).forEach((group) => {
           const groupSection = recordsSection.createDiv({ cls: "metrics-lens-group" });
           const headingContainer = groupSection.createDiv({
             cls: ["metrics-lens-group-heading", "markdown-reading-view"],
@@ -1320,11 +1345,13 @@ export class MetricsFileView extends TextFileView {
       value: "",
     });
     availableKeys.forEach((key) => {
+      const optionText = displayMetricOption(key, this.plugin.settings.metricNameDisplayMode);
       const option = keySelect.createEl("option", {
-        text: displayMetricOption(key),
+        text: optionText,
         value: key,
       });
-      option.title = key;
+      const alternateLabel = alternateMetricLabel(key, this.plugin.settings.metricNameDisplayMode);
+      option.title = alternateLabel ?? optionText;
     });
     keySelect.value = this.viewState.key;
     keySelect.addEventListener("change", () => {

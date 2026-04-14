@@ -73,7 +73,7 @@ Each line in a metrics file is one JSON object.
 ### Optional fields
 
 - `date`: local date shortcut in `YYYY-MM-DD`
-- `unit`: human-readable unit such as `kg`, `kcal`, `percent`, `bpm`, `min`
+- `unit`: canonical unit code such as `kg`, `kcal`, `%`, `bpm`, `min`, `Cel`
 - `origin_id`: external source identifier used for provenance and dedupe
 - `note`: short human-readable note
 - `context`: JSON object for structured extra data
@@ -84,6 +84,7 @@ Each line in a metrics file is one JSON object.
 - `src/metric-catalog.json` is the machine-readable source of truth for first-party supported metrics, units, labels, icon candidates, and formatting hints.
 - `docs/metric-catalog.md` is generated from that JSON source and should not be edited by hand.
 - The catalog is used directly by runtime validation, row rendering, chart labels, and record-edit modal suggestions.
+- The current catalog is grounded in the linked vault's observed Withings, WHOOP, nutrition, and medication records, then normalized into a cleaner canonical vocabulary.
 - Unknown keys remain allowed by the file contract so the plugin stays file-first and user-extensible.
 - Unknown keys are warned as outside the built-in catalog rather than rejected as invalid rows.
 
@@ -163,7 +164,7 @@ Unknown keys, unknown units, and built-in key/unit mismatches are warnings, not 
 - file-backed metrics view for `*.metrics.ndjson`
 - file browser integration for compound metrics extensions
 - current-file create, update, and delete flows for metrics rows
-- settings for metrics root, supported extensions, default write file, reference prefix, and metric icons
+- settings for metrics root, supported extensions, default write file, reference prefix, metric icons, and metric label display mode
 - built-in metric catalog for first-party metric metadata and validation hints
 - direct file reads and writes via Obsidian APIs
 - in-memory working state only
@@ -191,8 +192,8 @@ The display name omits "Obsidian" to stay aligned with common community plugin n
 - `ndjson` is registered as a file-browser fallback so metrics files remain visible in the sidebar
 - The plugin rewrites file browser labels so `withings.metrics.ndjson` appears as `withings`
 - The current file view parses live rows, validates them, and surfaces file-level and row-level diagnostics
-- The current vault data is legacy relative to the v1 contract because rows use `origin_id` but not `id`
-- The plugin can now assign missing ULIDs to a current metrics file so legacy rows can move into the v1 contract
+- The current linked vault data now carries stable `id` values and exercises the built-in catalog with Withings body composition, WHOOP recovery and sleep, nutrition intake, and medication dose records
+- The plugin still supports assigning missing ULIDs to a current metrics file when older rows need to be brought into the v1 contract
 - The plugin can now append, edit, and delete records in the current metrics file once rows have stable ids
 - The current file view is rendered as a compact timeline with minimal default Obsidian styling
 - Records are sorted newest-first by default using `ts`
@@ -205,6 +206,7 @@ The display name omits "Obsidian" to stay aligned with common community plugin n
 - Day groups render as linked `h2` headings titled `YYYY-MM-DD` and open the matching daily note
 - Metric icons can be shown in timeline markers and are enabled by default when the icon exists in Obsidian
 - Validation, row labels, chart labels, and record modal suggestions now read from the built-in metric catalog
+- Lists and dropdowns can now switch between friendly metric names and canonical keys from settings
 - Record actions are available from a minimal `...` menu for copying stable `metric:<id>` references, plus copy, edit, and delete operations
 - Metrics files can now be created, renamed, and deleted from commands or the metrics view title bar
 - The current file view can render interactive charts above the filter bar when it is shown, using the same visible rows as the timeline

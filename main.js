@@ -25,9 +25,6 @@ __export(main_exports, {
 module.exports = __toCommonJS(main_exports);
 var import_obsidian6 = require("obsidian");
 
-// src/metric-record-modal.ts
-var import_obsidian = require("obsidian");
-
 // src/metric-catalog.json
 var metric_catalog_default = {
   version: 1,
@@ -58,20 +55,29 @@ var metric_catalog_default = {
     }
   },
   metrics: {
-    "activity.strain": {
-      allowedUnits: ["score"],
-      category: "activity",
-      defaultUnit: "score",
-      fractionDigits: 0,
-      label: "Activity strain"
-    },
-    "body.body_fat_pct": {
-      allowedUnits: ["percent"],
+    "body.fat_free_mass": {
+      allowedUnits: ["kg"],
       category: "body",
-      defaultUnit: "percent",
+      defaultUnit: "kg",
+      fractionDigits: 1,
+      iconCandidates: ["dumbbell", "activity"],
+      label: "Fat-free mass"
+    },
+    "body.fat_mass": {
+      allowedUnits: ["kg"],
+      category: "body",
+      defaultUnit: "kg",
+      fractionDigits: 1,
+      iconCandidates: ["scale", "activity"],
+      label: "Fat mass"
+    },
+    "body.fat_percentage": {
+      allowedUnits: ["%"],
+      category: "body",
+      defaultUnit: "%",
       fractionDigits: 1,
       iconCandidates: ["percent", "activity"],
-      label: "Body fat"
+      label: "Body fat percentage"
     },
     "body.weight": {
       allowedUnits: ["kg"],
@@ -89,15 +95,39 @@ var metric_catalog_default = {
       iconCandidates: ["syringe", "pill"],
       label: "Semaglutide dose"
     },
-    "nutrition.calories": {
+    "nutrition.energy_intake": {
       allowedUnits: ["kcal"],
       category: "nutrition",
       defaultUnit: "kcal",
       fractionDigits: 0,
       iconCandidates: ["flame", "utensils"],
-      label: "Calories"
+      label: "Energy intake"
     },
-    "recovery.resting_hr": {
+    "recovery.heart_rate_variability": {
+      allowedUnits: ["ms"],
+      category: "recovery",
+      defaultUnit: "ms",
+      fractionDigits: 1,
+      iconCandidates: ["heart-pulse", "heart", "activity"],
+      label: "Heart rate variability"
+    },
+    "recovery.oxygen_saturation": {
+      allowedUnits: ["%"],
+      category: "recovery",
+      defaultUnit: "%",
+      fractionDigits: 1,
+      iconCandidates: ["heart", "activity"],
+      label: "Oxygen saturation"
+    },
+    "recovery.respiratory_rate": {
+      allowedUnits: ["br/min"],
+      category: "recovery",
+      defaultUnit: "br/min",
+      fractionDigits: 2,
+      iconCandidates: ["wind", "activity"],
+      label: "Respiratory rate"
+    },
+    "recovery.resting_heart_rate": {
       allowedUnits: ["bpm"],
       category: "recovery",
       defaultUnit: "bpm",
@@ -105,43 +135,73 @@ var metric_catalog_default = {
       iconCandidates: ["heart-pulse", "heart", "activity"],
       label: "Resting heart rate"
     },
-    "recovery.score": {
-      allowedUnits: ["score", "percent"],
+    "recovery.skin_temperature": {
+      allowedUnits: ["Cel"],
       category: "recovery",
-      defaultUnit: "score",
-      fractionDigits: 0,
-      iconCandidates: ["battery-full", "battery", "heart", "activity"],
-      label: "Recovery score"
+      defaultUnit: "Cel",
+      fractionDigits: 1,
+      iconCandidates: ["thermometer", "activity"],
+      label: "Skin temperature"
     },
     "sleep.duration": {
-      allowedUnits: ["hours", "min", "sec"],
+      allowedUnits: ["h", "min", "s"],
       category: "sleep",
       defaultUnit: "min",
       fractionDigits: 0,
       iconCandidates: ["moon-star", "moon", "bed"],
       label: "Sleep duration"
     },
-    "sleep.performance": {
-      allowedUnits: ["score", "percent"],
+    "sleep.efficiency": {
+      allowedUnits: ["%"],
       category: "sleep",
+      defaultUnit: "%",
+      fractionDigits: 1,
+      iconCandidates: ["bed", "moon", "activity"],
+      label: "Sleep efficiency"
+    },
+    "whoop.day_strain": {
+      allowedUnits: ["score"],
+      category: "activity",
       defaultUnit: "score",
+      fractionDigits: 2,
+      iconCandidates: ["gauge", "activity", "zap"],
+      label: "WHOOP strain"
+    },
+    "whoop.recovery_score": {
+      allowedUnits: ["%"],
+      category: "recovery",
+      defaultUnit: "%",
+      fractionDigits: 0,
+      iconCandidates: ["battery-full", "battery", "heart", "activity"],
+      label: "WHOOP recovery score"
+    },
+    "whoop.sleep_performance": {
+      allowedUnits: ["%"],
+      category: "sleep",
+      defaultUnit: "%",
       fractionDigits: 0,
       iconCandidates: ["bed", "moon", "activity"],
-      label: "Sleep performance"
+      label: "WHOOP sleep performance"
     }
   },
   units: {
-    C: {
-      aliases: ["c", "celsius"],
+    "%": {
+      aliases: ["percent", "pct"],
+      display: "%",
+      fractionDigits: 1,
+      label: "Percent"
+    },
+    Cel: {
+      aliases: ["c", "celsius", "\xB0c"],
       display: "\xB0C",
       fractionDigits: 1,
-      label: "Celsius"
+      label: "Degrees Celsius"
     },
-    F: {
-      aliases: ["f", "fahrenheit"],
+    "[degF]": {
+      aliases: ["f", "fahrenheit", "\xB0f"],
       display: "\xB0F",
       fractionDigits: 1,
-      label: "Fahrenheit"
+      label: "Degrees Fahrenheit"
     },
     bpm: {
       aliases: [],
@@ -167,10 +227,10 @@ var metric_catalog_default = {
       fractionDigits: 0,
       label: "Grams"
     },
-    hours: {
-      aliases: ["hour", "hr", "hrs"],
+    h: {
+      aliases: ["hour", "hours", "hr", "hrs"],
       display: "hr",
-      durationUnit: "hours",
+      durationUnit: "h",
       label: "Hours"
     },
     kcal: {
@@ -197,20 +257,20 @@ var metric_catalog_default = {
       fractionDigits: 2,
       label: "Milligrams"
     },
+    mL: {
+      aliases: ["ml", "milliliter", "milliliters"],
+      display: "mL",
+      fractionDigits: 0,
+      label: "Milliliters"
+    },
     min: {
       aliases: ["minute", "minutes"],
       display: "min",
       durationUnit: "min",
       label: "Minutes"
     },
-    ml: {
-      aliases: ["milliliter", "milliliters"],
-      display: "ml",
-      fractionDigits: 0,
-      label: "Milliliters"
-    },
-    mmHg: {
-      aliases: ["mmhg"],
+    "mm[Hg]": {
+      aliases: ["mmhg", "mmHg"],
       display: "mmHg",
       fractionDigits: 0,
       label: "Millimeters of mercury"
@@ -221,22 +281,16 @@ var metric_catalog_default = {
       fractionDigits: 0,
       label: "Milliseconds"
     },
-    percent: {
-      aliases: ["%", "pct"],
-      display: "%",
-      fractionDigits: 1,
-      label: "Percent"
-    },
     score: {
       aliases: [],
       display: "score",
       fractionDigits: 0,
       label: "Score"
     },
-    sec: {
-      aliases: ["s", "second", "seconds"],
+    s: {
+      aliases: ["sec", "second", "seconds"],
       display: "sec",
-      durationUnit: "sec",
+      durationUnit: "s",
       label: "Seconds"
     }
   }
@@ -322,9 +376,15 @@ function displayMetricKey(metricKey) {
   }
   return metricCatalog.metrics[trimmed]?.label ?? trimmed;
 }
-function displayMetricOption(metricKey) {
-  const label = displayMetricKey(metricKey);
-  return label === metricKey ? metricKey : `${label} (${metricKey})`;
+function displayMetricName(metricKey, mode = "friendly") {
+  const trimmed = trimToNull(metricKey);
+  if (!trimmed) {
+    return "Invalid row";
+  }
+  return mode === "key" ? trimmed : displayMetricKey(trimmed);
+}
+function displayMetricOption(metricKey, mode = "friendly") {
+  return displayMetricName(metricKey, mode);
 }
 function displayMetricUnit(unit) {
   const normalizedUnitKey = normalizeMetricUnitKey(unit);
@@ -415,14 +475,15 @@ function normalizeMetricUnitKey(unit) {
   }
   return trimToNull(unit);
 }
-function compareMetricKeys(left, right) {
-  const leftLabel = displayMetricKey(left);
-  const rightLabel = displayMetricKey(right);
+function compareMetricKeys(left, right, mode = "friendly") {
+  const leftLabel = displayMetricName(left, mode);
+  const rightLabel = displayMetricName(right, mode);
   const labelComparison = leftLabel.localeCompare(rightLabel);
   return labelComparison !== 0 ? labelComparison : left.localeCompare(right);
 }
 
 // src/metric-record-modal.ts
+var import_obsidian = require("obsidian");
 function currentIsoTimestamp() {
   return (/* @__PURE__ */ new Date()).toISOString();
 }
@@ -467,7 +528,11 @@ var MetricRecordModal = class extends import_obsidian.Modal {
     let unitInputEl = null;
     const keySuggestions = contentEl.createEl("datalist");
     keySuggestions.id = keySuggestionsId;
-    populateDatalist(keySuggestions, allMetricKeys(), displayMetricKey);
+    populateDatalist(
+      keySuggestions,
+      allMetricKeys(),
+      (value2) => displayMetricOption(value2, this.options.metricNameDisplayMode)
+    );
     const unitSuggestions = contentEl.createEl("datalist");
     unitSuggestions.id = unitSuggestionsId;
     const syncUnitSuggestions = () => {
@@ -513,7 +578,7 @@ var MetricRecordModal = class extends import_obsidian.Modal {
         value = nextValue;
       });
     });
-    new import_obsidian.Setting(contentEl).setName("Unit").setDesc("Optional display unit. Catalog-backed suggestions follow the current key.").addText((text) => {
+    new import_obsidian.Setting(contentEl).setName("Unit").setDesc("Optional canonical unit code. Catalog-backed suggestions follow the current key.").addText((text) => {
       unitInputEl = text.inputEl;
       text.inputEl.setAttribute("list", unitSuggestionsId);
       text.setPlaceholder(getDefaultUnitForMetric(key.trim()) ?? "kg");
@@ -972,6 +1037,7 @@ function normalizePersistedMetricsViewState(value) {
 // src/settings.ts
 var DEFAULT_SETTINGS = {
   defaultWriteFile: "Metrics/All.metrics.ndjson",
+  metricNameDisplayMode: "friendly",
   metricsRoot: "Metrics",
   persistedViewStateByPath: {},
   recordReferencePrefix: "metric:",
@@ -988,6 +1054,7 @@ function normalizeMetricsSettings(settings) {
   );
   return {
     defaultWriteFile: (0, import_obsidian3.normalizePath)(settings.defaultWriteFile ?? DEFAULT_SETTINGS.defaultWriteFile),
+    metricNameDisplayMode: settings.metricNameDisplayMode === "key" ? "key" : DEFAULT_SETTINGS.metricNameDisplayMode,
     metricsRoot: (0, import_obsidian3.normalizePath)(settings.metricsRoot ?? DEFAULT_SETTINGS.metricsRoot),
     persistedViewStateByPath,
     recordReferencePrefix: settings.recordReferencePrefix?.trim() || DEFAULT_SETTINGS.recordReferencePrefix,
@@ -1062,6 +1129,13 @@ var MetricsSettingTab = class extends import_obsidian3.PluginSettingTab {
         this.plugin.refreshOpenMetricsViews();
       });
     });
+    new import_obsidian3.Setting(containerEl).setName("Metric label display").setDesc("Choose whether lists and dropdowns show friendly metric names or canonical keys.").addDropdown((dropdown) => {
+      dropdown.addOption("friendly", "Friendly names").addOption("key", "Canonical keys").setValue(this.plugin.settings.metricNameDisplayMode).onChange(async (value) => {
+        this.plugin.settings.metricNameDisplayMode = value === "key" ? "key" : "friendly";
+        await this.plugin.saveSettings();
+        this.plugin.refreshOpenMetricsViews();
+      });
+    });
   }
 };
 
@@ -1113,13 +1187,13 @@ function resolveMetricFractionDigits(metricKey, unit, options) {
   if (typeof catalogFractionDigits === "number") {
     return fixedFractionDigits(catalogFractionDigits);
   }
-  if (normalizedMetricKey.endsWith("_pct") || canonicalUnit === "percent" || normalizedUnit === "%" || normalizedUnit === "percent") {
+  if (normalizedMetricKey.endsWith("_percentage") || canonicalUnit === "%" || normalizedUnit === "%" || normalizedUnit === "percent" || normalizedUnit === "pct") {
     return fixedFractionDigits(1);
   }
-  if (normalizedMetricKey.includes("temperature") || canonicalUnit === "C" || canonicalUnit === "F" || normalizedUnit === "c" || normalizedUnit === "f") {
+  if (normalizedMetricKey.includes("temperature") || canonicalUnit === "Cel" || canonicalUnit === "[degF]" || normalizedUnit === "c" || normalizedUnit === "f" || normalizedUnit === "celsius" || normalizedUnit === "fahrenheit") {
     return fixedFractionDigits(1);
   }
-  if (canonicalUnit === "bpm" || canonicalUnit === "br/min" || canonicalUnit === "count" || canonicalUnit === "kcal" || canonicalUnit === "mmHg" || canonicalUnit === "score") {
+  if (canonicalUnit === "bpm" || canonicalUnit === "br/min" || canonicalUnit === "count" || canonicalUnit === "kcal" || canonicalUnit === "mm[Hg]" || canonicalUnit === "score") {
     return fixedFractionDigits(0);
   }
   return defaultFractionDigits(options?.rawPrecision);
@@ -1128,7 +1202,7 @@ function formatDurationValue(value, durationUnit) {
   const sign = value < 0 ? "-" : "";
   const totalSeconds = Math.round(
     Math.abs(
-      durationUnit === "hours" ? value * 3600 : durationUnit === "min" ? value * 60 : value
+      durationUnit === "h" ? value * 3600 : durationUnit === "min" ? value * 60 : value
     )
   );
   if (totalSeconds === 0) {
@@ -3057,14 +3131,20 @@ function rowSearchText(row) {
   }
   return parts.filter((value) => typeof value === "string" && value.length > 0).join(" ").toLowerCase();
 }
-function collectFilterValues(rows, field) {
+function alternateMetricLabel(metricKey, mode) {
+  const alternateMode = mode === "friendly" ? "key" : "friendly";
+  const alternate = displayMetricName(metricKey, alternateMode);
+  const current = displayMetricName(metricKey, mode);
+  return alternate === current ? null : alternate;
+}
+function collectFilterValues(rows, field, metricNameDisplayMode) {
   const values = Array.from(
     new Set(
       rows.map((row) => row.metric?.[field]).filter((value) => typeof value === "string" && value.length > 0)
     )
   );
   return values.sort(
-    (left, right) => field === "key" ? compareMetricKeys(left, right) : left.localeCompare(right)
+    (left, right) => field === "key" ? compareMetricKeys(left, right, metricNameDisplayMode) : left.localeCompare(right)
   );
 }
 function withSelectedFilterValue(options, selected) {
@@ -3211,7 +3291,7 @@ function groupRowsByDay(rows) {
     rows: groupedRows2
   }));
 }
-function groupRowsByField(rows, field) {
+function groupRowsByField(rows, field, metricNameDisplayMode) {
   const groups = /* @__PURE__ */ new Map();
   rows.forEach((row) => {
     const value = row.metric?.[field];
@@ -3221,19 +3301,19 @@ function groupRowsByField(rows, field) {
     groups.set(key, current);
   });
   return Array.from(groups.entries()).map(([key, groupedRows2]) => ({
-    heading: key === "__empty__" ? field === "key" ? "No metric" : "No source" : field === "key" ? displayMetricKey(key) : key,
+    heading: key === "__empty__" ? field === "key" ? "No metric" : "No source" : field === "key" ? displayMetricName(key, metricNameDisplayMode) : key,
     key,
     rows: groupedRows2
   }));
 }
-function groupedRows(rows, groupBy) {
+function groupedRows(rows, groupBy, metricNameDisplayMode) {
   switch (groupBy) {
     case "day":
       return groupRowsByDay(rows);
     case "key":
-      return groupRowsByField(rows, "key");
+      return groupRowsByField(rows, "key", metricNameDisplayMode);
     case "source":
-      return groupRowsByField(rows, "source");
+      return groupRowsByField(rows, "source", metricNameDisplayMode);
     case "none":
     default:
       return [];
@@ -3418,7 +3498,8 @@ function renderRecord(container, row, plugin, file, referencePrefix, options) {
   }
   const body = rowEl.createDiv({ cls: "metrics-lens-record-body" });
   const marker = body.createSpan({ cls: "metrics-lens-record-marker" });
-  const metricKeyLabel = displayMetricKey(row.metric?.key);
+  const metricDisplayMode = plugin.settings.metricNameDisplayMode;
+  const metricKeyLabel = displayMetricName(row.metric?.key, metricDisplayMode);
   const iconId = plugin.settings.showMetricIcons && typeof row.metric?.key === "string" ? metricIconForKey(row.metric.key) : null;
   if (iconId) {
     marker.setAttribute("aria-hidden", "true");
@@ -3437,8 +3518,11 @@ function renderRecord(container, row, plugin, file, referencePrefix, options) {
     cls: "metrics-lens-record-key",
     text: metricKeyLabel
   });
-  if (typeof row.metric?.key === "string" && row.metric.key !== metricKeyLabel) {
-    metricKeyEl.setAttribute("title", row.metric.key);
+  if (typeof row.metric?.key === "string") {
+    const alternateLabel = alternateMetricLabel(row.metric.key, metricDisplayMode);
+    if (alternateLabel) {
+      metricKeyEl.setAttribute("title", alternateLabel);
+    }
   }
   const metricValue = formatMetricValue(row);
   if (metricValue) {
@@ -3732,11 +3816,11 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
     }
     const analysis = analyzeMetricsData(this.data ?? "");
     const availableKeys = withSelectedFilterValue(
-      collectFilterValues(analysis.rows, "key"),
+      collectFilterValues(analysis.rows, "key", this.plugin.settings.metricNameDisplayMode),
       this.viewState.key
     );
     const availableSources = withSelectedFilterValue(
-      collectFilterValues(analysis.rows, "source"),
+      collectFilterValues(analysis.rows, "source", this.plugin.settings.metricNameDisplayMode),
       this.viewState.source
     );
     const normalizedViewState = this.normalizeViewState();
@@ -3774,7 +3858,11 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
     } else {
       const recordsSection = container.createDiv({ cls: "metrics-lens-section" });
       if (this.viewState.groupBy !== "none") {
-        groupedRows(visibleRows, this.viewState.groupBy).forEach((group) => {
+        groupedRows(
+          visibleRows,
+          this.viewState.groupBy,
+          this.plugin.settings.metricNameDisplayMode
+        ).forEach((group) => {
           const groupSection = recordsSection.createDiv({ cls: "metrics-lens-group" });
           const headingContainer = groupSection.createDiv({
             cls: ["metrics-lens-group-heading", "markdown-reading-view"]
@@ -3917,11 +4005,13 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
       value: ""
     });
     availableKeys.forEach((key) => {
+      const optionText = displayMetricOption(key, this.plugin.settings.metricNameDisplayMode);
       const option = keySelect.createEl("option", {
-        text: displayMetricOption(key),
+        text: optionText,
         value: key
       });
-      option.title = key;
+      const alternateLabel = alternateMetricLabel(key, this.plugin.settings.metricNameDisplayMode);
+      option.title = alternateLabel ?? optionText;
     });
     keySelect.value = this.viewState.key;
     keySelect.addEventListener("change", () => {
@@ -4429,6 +4519,7 @@ var MetricsPlugin = class extends import_obsidian6.Plugin {
     const modal = new MetricRecordModal(
       this.app,
       {
+        metricNameDisplayMode: this.settings.metricNameDisplayMode,
         submitLabel: "Add record",
         title: `Add record to ${logicalMetricsBaseName(file.name, this.settings.supportedExtensions)}`
       },
@@ -4443,8 +4534,9 @@ var MetricsPlugin = class extends import_obsidian6.Plugin {
       this.app,
       {
         initialRecord: record,
+        metricNameDisplayMode: this.settings.metricNameDisplayMode,
         submitLabel: "Save record",
-        title: `Edit ${record.key}`
+        title: `Edit ${displayMetricName(record.key, this.settings.metricNameDisplayMode)}`
       },
       (recordInput) => {
         void this.updateRecord(file, record.id, recordInput);

@@ -102,7 +102,7 @@ Recommended internal model:
 - If visible rows contain multiple units, split into separate stacked chart panels by unit.
 - Example:
   - `body.weight` in `kg` becomes one chart
-  - `nutrition.calories` in `kcal` becomes another chart
+  - `nutrition.energy_intake` in `kcal` becomes another chart
 
 This is preferred over dual axes in v1 because it is clearer and simpler.
 

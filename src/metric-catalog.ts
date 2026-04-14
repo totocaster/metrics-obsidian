@@ -17,7 +17,7 @@ interface MetricCatalogMetric {
 interface MetricCatalogUnit {
   aliases?: string[];
   display?: string;
-  durationUnit?: "hours" | "min" | "sec";
+  durationUnit?: "h" | "min" | "s";
   fractionDigits?: number;
   label: string;
 }
@@ -28,6 +28,8 @@ interface MetricCatalogDefinition {
   units: Record<string, MetricCatalogUnit>;
   version: number;
 }
+
+export type MetricNameDisplayMode = "friendly" | "key";
 
 const DEFAULT_ICON_CANDIDATES = ["activity"];
 
@@ -128,9 +130,23 @@ export function displayMetricKey(metricKey: string | null | undefined): string {
   return metricCatalog.metrics[trimmed]?.label ?? trimmed;
 }
 
-export function displayMetricOption(metricKey: string): string {
-  const label = displayMetricKey(metricKey);
-  return label === metricKey ? metricKey : `${label} (${metricKey})`;
+export function displayMetricName(
+  metricKey: string | null | undefined,
+  mode: MetricNameDisplayMode = "friendly",
+): string {
+  const trimmed = trimToNull(metricKey);
+  if (!trimmed) {
+    return "Invalid row";
+  }
+
+  return mode === "key" ? trimmed : displayMetricKey(trimmed);
+}
+
+export function displayMetricOption(
+  metricKey: string,
+  mode: MetricNameDisplayMode = "friendly",
+): string {
+  return displayMetricName(metricKey, mode);
 }
 
 export function displayMetricUnit(unit: string | null | undefined): string | null {
@@ -213,7 +229,7 @@ export function getMetricFractionDigits(
 
 export function getMetricDurationUnit(
   unit: string | null | undefined,
-): "hours" | "min" | "sec" | null {
+): "h" | "min" | "s" | null {
   return getMetricUnitDefinition(unit)?.durationUnit ?? null;
 }
 
@@ -259,9 +275,13 @@ export function normalizeMetricUnitKey(unit: string | null | undefined): string 
   return trimToNull(unit);
 }
 
-export function compareMetricKeys(left: string, right: string): number {
-  const leftLabel = displayMetricKey(left);
-  const rightLabel = displayMetricKey(right);
+export function compareMetricKeys(
+  left: string,
+  right: string,
+  mode: MetricNameDisplayMode = "friendly",
+): number {
+  const leftLabel = displayMetricName(left, mode);
+  const rightLabel = displayMetricName(right, mode);
   const labelComparison = leftLabel.localeCompare(rightLabel);
   return labelComparison !== 0 ? labelComparison : left.localeCompare(right);
 }

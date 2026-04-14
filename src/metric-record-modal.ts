@@ -4,7 +4,8 @@ import type { MetricRecord } from "./contract";
 import {
   allMetricKeys,
   allUnitKeys,
-  displayMetricKey,
+  displayMetricOption,
+  type MetricNameDisplayMode,
   displayMetricUnitOption,
   getDefaultUnitForMetric,
   getSupportedUnitsForMetric,
@@ -13,6 +14,7 @@ import type { MetricRecordInput } from "./metrics-file-mutation";
 
 interface MetricRecordModalOptions {
   initialRecord?: Partial<MetricRecord>;
+  metricNameDisplayMode: MetricNameDisplayMode;
   submitLabel: string;
   title: string;
 }
@@ -78,7 +80,11 @@ export class MetricRecordModal extends Modal {
 
     const keySuggestions = contentEl.createEl("datalist");
     keySuggestions.id = keySuggestionsId;
-    populateDatalist(keySuggestions, allMetricKeys(), displayMetricKey);
+    populateDatalist(
+      keySuggestions,
+      allMetricKeys(),
+      (value) => displayMetricOption(value, this.options.metricNameDisplayMode),
+    );
 
     const unitSuggestions = contentEl.createEl("datalist");
     unitSuggestions.id = unitSuggestionsId;
@@ -146,7 +152,7 @@ export class MetricRecordModal extends Modal {
 
     new Setting(contentEl)
       .setName("Unit")
-      .setDesc("Optional display unit. Catalog-backed suggestions follow the current key.")
+      .setDesc("Optional canonical unit code. Catalog-backed suggestions follow the current key.")
       .addText((text) => {
         unitInputEl = text.inputEl;
         text.inputEl.setAttribute("list", unitSuggestionsId);

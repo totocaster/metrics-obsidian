@@ -71,6 +71,7 @@ Important contract decisions:
 
 - `id` is required for v1 CRUD
 - `id` should be ULID-formatted
+- `unit` stores canonical unit codes, not free-form display text
 - `origin_id` is provenance, not the primary record id
 - stable copied references use plain `metric:<id>` text only
 - notes may contain that token, but the plugin does not resolve or render it in this phase
@@ -154,7 +155,7 @@ Important contract decisions:
 - `src/metric-value-format.ts`
   - metric value display helpers
   - catalog-backed unit display and fraction digits
-  - duration formatting for `min`, `sec`, and `hours`
+  - duration formatting for `min`, `s`, and `h`
 
 - `src/contract.ts`
   - contract-level helpers and shared constants

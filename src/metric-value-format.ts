@@ -5,7 +5,7 @@ import {
   getMetricFractionDigits,
 } from "./metric-catalog";
 
-function normalizeDurationUnit(unit: string | null | undefined): "hours" | "min" | "sec" | null {
+function normalizeDurationUnit(unit: string | null | undefined): "h" | "min" | "s" | null {
   return getMetricDurationUnit(unit);
 }
 
@@ -74,20 +74,23 @@ export function resolveMetricFractionDigits(
   }
 
   if (
-    normalizedMetricKey.endsWith("_pct") ||
-    canonicalUnit === "percent" ||
+    normalizedMetricKey.endsWith("_percentage") ||
+    canonicalUnit === "%" ||
     normalizedUnit === "%" ||
-    normalizedUnit === "percent"
+    normalizedUnit === "percent" ||
+    normalizedUnit === "pct"
   ) {
     return fixedFractionDigits(1);
   }
 
   if (
     normalizedMetricKey.includes("temperature") ||
-    canonicalUnit === "C" ||
-    canonicalUnit === "F" ||
+    canonicalUnit === "Cel" ||
+    canonicalUnit === "[degF]" ||
     normalizedUnit === "c" ||
-    normalizedUnit === "f"
+    normalizedUnit === "f" ||
+    normalizedUnit === "celsius" ||
+    normalizedUnit === "fahrenheit"
   ) {
     return fixedFractionDigits(1);
   }
@@ -97,7 +100,7 @@ export function resolveMetricFractionDigits(
     canonicalUnit === "br/min" ||
     canonicalUnit === "count" ||
     canonicalUnit === "kcal" ||
-    canonicalUnit === "mmHg" ||
+    canonicalUnit === "mm[Hg]" ||
     canonicalUnit === "score"
   ) {
     return fixedFractionDigits(0);
@@ -106,11 +109,11 @@ export function resolveMetricFractionDigits(
   return defaultFractionDigits(options?.rawPrecision);
 }
 
-function formatDurationValue(value: number, durationUnit: "hours" | "min" | "sec"): string {
+function formatDurationValue(value: number, durationUnit: "h" | "min" | "s"): string {
   const sign = value < 0 ? "-" : "";
   const totalSeconds = Math.round(
     Math.abs(
-      durationUnit === "hours"
+      durationUnit === "h"
         ? value * 3600
         : durationUnit === "min"
           ? value * 60

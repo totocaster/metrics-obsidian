@@ -12,6 +12,7 @@ import {
 import {
   type MetricRecord,
 } from "./contract";
+import { displayMetricName } from "./metric-catalog";
 import { MetricRecordModal } from "./metric-record-modal";
 import {
   appendMetricRecordToMetricsData,
@@ -380,6 +381,7 @@ export default class MetricsPlugin extends Plugin {
     const modal = new MetricRecordModal(
       this.app,
       {
+        metricNameDisplayMode: this.settings.metricNameDisplayMode,
         submitLabel: "Add record",
         title: `Add record to ${logicalMetricsBaseName(file.name, this.settings.supportedExtensions)}`,
       },
@@ -395,8 +397,9 @@ export default class MetricsPlugin extends Plugin {
       this.app,
       {
         initialRecord: record,
+        metricNameDisplayMode: this.settings.metricNameDisplayMode,
         submitLabel: "Save record",
-        title: `Edit ${record.key}`,
+        title: `Edit ${displayMetricName(record.key, this.settings.metricNameDisplayMode)}`,
       },
       (recordInput) => {
         void this.updateRecord(file, record.id, recordInput);
