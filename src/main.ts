@@ -1,4 +1,15 @@
-import { Editor, FileView, MarkdownView, Notice, Plugin, TFile, TFolder, WorkspaceLeaf } from "obsidian";
+import {
+  Editor,
+  FileView,
+  MarkdownView,
+  Menu,
+  Notice,
+  Plugin,
+  TFile,
+  TFolder,
+  WorkspaceLeaf,
+  normalizePath,
+} from "obsidian";
 
 import {
   extractMetricIdFromText,
@@ -16,6 +27,7 @@ import {
   type MetricRecordInput,
   updateMetricRecordInMetricsData,
 } from "./metrics-file-mutation";
+import { MetricsFileModal } from "./metrics-file-modal";
 import { DEFAULT_SETTINGS, MetricsPluginSettings, MetricsSettingTab, normalizeMetricsSettings } from "./settings";
 import { logicalMetricsBaseName, METRICS_VIEW_TYPE, MetricsFileView } from "./view";
 import {
@@ -100,6 +112,48 @@ export default class MetricsPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "new-file",
+      name: "New metrics file",
+      callback: () => {
+        this.openCreateMetricsFileModal();
+      },
+    });
+
+    this.addCommand({
+      id: "rename-current-file",
+      name: "Rename current metrics file",
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file || !this.isMetricsFile(file)) {
+          return false;
+        }
+
+        if (!checking) {
+          this.openRenameMetricsFileModal(file);
+        }
+
+        return true;
+      },
+    });
+
+    this.addCommand({
+      id: "delete-current-file",
+      name: "Delete current metrics file",
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file || !this.isMetricsFile(file)) {
+          return false;
+        }
+
+        if (!checking) {
+          this.confirmDeleteMetricsFile(file);
+        }
+
+        return true;
+      },
+    });
+
+    this.addCommand({
       id: "open-view",
       name: "Open metrics view",
       callback: async () => {
@@ -156,8 +210,23 @@ export default class MetricsPlugin extends Plugin {
 
     this.registerEvent(this.app.vault.on("modify", () => this.refreshOpenMetricsViews()));
     this.registerEvent(this.app.vault.on("create", () => this.refreshOpenMetricsViews()));
-    this.registerEvent(this.app.vault.on("delete", () => this.refreshOpenMetricsViews()));
-    this.registerEvent(this.app.vault.on("rename", () => this.refreshOpenMetricsViews()));
+    this.registerEvent(
+      this.app.vault.on("delete", (file) => {
+        this.forgetPersistedViewStateForPath(file.path);
+        void this.resetDeletedMetricsLeaves(file.path);
+        this.refreshOpenMetricsViews();
+      }),
+    );
+    this.registerEvent(
+      this.app.vault.on("rename", (file, oldPath) => {
+        if (file instanceof TFile) {
+          this.handleMetricsFileRename(file, oldPath);
+        } else if (this.isMetricsPath(normalizePath(oldPath))) {
+          this.forgetPersistedViewStateForPath(oldPath);
+        }
+        this.refreshOpenMetricsViews();
+      }),
+    );
 
     this.app.workspace.onLayoutReady(() => {
       const activeFile = this.app.workspace.getActiveFile();
@@ -248,6 +317,26 @@ export default class MetricsPlugin extends Plugin {
     }
 
     delete this.settings.persistedViewStateByPath[filePath];
+    this.queuePersistedViewStateSave();
+  }
+
+  forgetPersistedViewStateForPath(filePath: string | null): void {
+    if (!filePath || !(filePath in this.settings.persistedViewStateByPath)) {
+      return;
+    }
+
+    delete this.settings.persistedViewStateByPath[filePath];
+    this.queuePersistedViewStateSave();
+  }
+
+  movePersistedViewState(oldPath: string, newPath: string): void {
+    const persisted = this.settings.persistedViewStateByPath[oldPath];
+    if (!persisted) {
+      return;
+    }
+
+    this.settings.persistedViewStateByPath[newPath] = persisted;
+    delete this.settings.persistedViewStateByPath[oldPath];
     this.queuePersistedViewStateSave();
   }
 
@@ -352,6 +441,42 @@ export default class MetricsPlugin extends Plugin {
     modal.open();
   }
 
+  openCreateMetricsFileModal(initialValue = ""): void {
+    const modal = new MetricsFileModal(
+      this.app,
+      {
+        description: `Create a metrics file under ${this.settings.metricsRoot}. You can enter a nested relative path, and ${this.primaryMetricsExtension()} will be added when missing.`,
+        fieldLabel: "Path",
+        initialValue,
+        placeholder: `All${this.primaryMetricsExtension()}`,
+        submitLabel: "Create file",
+        title: "New metrics file",
+      },
+      (value) => {
+        void this.createMetricsFile(value);
+      },
+    );
+    modal.open();
+  }
+
+  openRenameMetricsFileModal(file: TFile): void {
+    const modal = new MetricsFileModal(
+      this.app,
+      {
+        description: `Rename this metrics file within ${this.settings.metricsRoot}. You can enter a nested relative path, and ${this.primaryMetricsExtension()} will be added when missing.`,
+        fieldLabel: "Path",
+        initialValue: this.relativeMetricsPath(file.path, { stripExtension: true }),
+        placeholder: logicalMetricsBaseName(file.name, this.settings.supportedExtensions),
+        submitLabel: "Rename file",
+        title: `Rename ${logicalMetricsBaseName(file.name, this.settings.supportedExtensions)}`,
+      },
+      (value) => {
+        void this.renameMetricsFile(file, value);
+      },
+    );
+    modal.open();
+  }
+
   async createRecord(file: TFile, recordInput: MetricRecordInput): Promise<void> {
     try {
       let createdId = "";
@@ -403,6 +528,136 @@ export default class MetricsPlugin extends Plugin {
     }
 
     void this.deleteRecord(file, record.id);
+  }
+
+  openMetricsFileActionsMenu(file: TFile | null, position?: DOMRect): void {
+    const menu = new Menu();
+
+    menu.addItem((item) => {
+      item.setTitle("New metrics file").setIcon("file-plus").onClick(() => {
+        const initialValue =
+          file && this.isMetricsFile(file)
+            ? this.relativeMetricsFolderPath(file.path)
+            : "";
+        this.openCreateMetricsFileModal(initialValue);
+      });
+    });
+
+    menu.addSeparator();
+
+    menu.addItem((item) => {
+      item
+        .setTitle("Rename current file")
+        .setIcon("pencil")
+        .setDisabled(!file)
+        .onClick(() => {
+          if (!file) {
+            return;
+          }
+          this.openRenameMetricsFileModal(file);
+        });
+    });
+
+    menu.addItem((item) => {
+      item
+        .setTitle("Delete current file")
+        .setIcon("trash")
+        .setDisabled(!file)
+        .setWarning(true)
+        .onClick(() => {
+          if (!file) {
+            return;
+          }
+          this.confirmDeleteMetricsFile(file);
+        });
+    });
+
+    if (position) {
+      menu.showAtPosition({
+        overlap: true,
+        width: position.width,
+        x: position.left,
+        y: position.bottom,
+      });
+      return;
+    }
+
+    menu.showAtPosition({
+      x: window.innerWidth / 2,
+      y: 80,
+    });
+  }
+
+  async createMetricsFile(input: string): Promise<void> {
+    try {
+      const path = this.resolveMetricsFilePath(input);
+      const existing = this.app.vault.getAbstractFileByPath(path);
+      if (existing) {
+        new Notice(`A file already exists at ${path}.`);
+        return;
+      }
+
+      await this.ensureParentFolder(path);
+      const file = await this.app.vault.create(path, "");
+      new Notice(`Created ${file.path}.`);
+      const targetLeaf =
+        this.app.workspace.getLeavesOfType(METRICS_VIEW_TYPE)[0] ??
+        this.app.workspace.getRightLeaf(false) ??
+        this.app.workspace.activeLeaf;
+      await this.openMetricsFile(
+        file,
+        targetLeaf,
+      );
+      this.refreshOpenMetricsViews();
+    } catch (error) {
+      this.handleMutationError(error);
+    }
+  }
+
+  async renameMetricsFile(file: TFile, input: string): Promise<void> {
+    try {
+      const nextPath = this.resolveMetricsFilePath(input, {
+        baseFolderPath: file.parent?.path ?? this.settings.metricsRoot,
+      });
+      if (nextPath === file.path) {
+        return;
+      }
+
+      const existing = this.app.vault.getAbstractFileByPath(nextPath);
+      if (existing && existing !== file) {
+        new Notice(`A file already exists at ${nextPath}.`);
+        return;
+      }
+
+      await this.ensureParentFolder(nextPath);
+      const previousPath = file.path;
+      await this.app.fileManager.renameFile(file, nextPath);
+      this.movePersistedViewState(previousPath, nextPath);
+      new Notice(`Renamed metrics file to ${nextPath}.`);
+    } catch (error) {
+      this.handleMutationError(error);
+    }
+  }
+
+  confirmDeleteMetricsFile(file: TFile): void {
+    if (!window.confirm(`Delete ${file.name}?`)) {
+      return;
+    }
+
+    void this.deleteMetricsFile(file);
+  }
+
+  async deleteMetricsFile(file: TFile): Promise<void> {
+    try {
+      const path = file.path;
+      await this.app.vault.trash(file, true);
+      this.forgetPersistedViewStateForPath(path);
+      await this.resetDeletedMetricsLeaves(path);
+      new Notice(`Deleted ${path}.`);
+      this.refreshOpenMetricsViews();
+    } catch (error) {
+      this.handleMutationError(error);
+    }
   }
 
   async openMetricsFile(file: TFile, leaf: WorkspaceLeaf | null): Promise<void> {
@@ -518,6 +773,130 @@ export default class MetricsPlugin extends Plugin {
     }
 
     return matches[0] ?? null;
+  }
+
+  private handleMetricsFileRename(file: TFile, oldPath: string): void {
+    const normalizedOldPath = normalizePath(oldPath);
+    if (this.isMetricsPath(normalizedOldPath)) {
+      if (this.isMetricsFile(file)) {
+        this.movePersistedViewState(normalizedOldPath, file.path);
+      } else {
+        this.forgetPersistedViewStateForPath(normalizedOldPath);
+      }
+    }
+  }
+
+  private primaryMetricsExtension(): string {
+    return this.settings.supportedExtensions[0] ?? DEFAULT_SETTINGS.supportedExtensions[0] ?? ".metrics.ndjson";
+  }
+
+  private hasSupportedExtension(path: string): boolean {
+    return this.settings.supportedExtensions.some((extension) => path.endsWith(extension));
+  }
+
+  private isWithinMetricsRoot(path: string): boolean {
+    const metricsRoot = normalizePath(this.settings.metricsRoot);
+    return path === metricsRoot || path.startsWith(`${metricsRoot}/`);
+  }
+
+  private resolveMetricsFilePath(
+    input: string,
+    options?: {
+      baseFolderPath?: string;
+    },
+  ): string {
+    const normalizedInput = normalizePath(input.trim());
+    let path = normalizedInput;
+
+    if (!this.hasSupportedExtension(path)) {
+      path = `${path}${this.primaryMetricsExtension()}`;
+    }
+
+    if (!this.isWithinMetricsRoot(path)) {
+      const baseFolder = normalizePath(options?.baseFolderPath ?? this.settings.metricsRoot);
+      path = normalizePath(`${baseFolder}/${path}`);
+    }
+
+    if (!this.isWithinMetricsRoot(path) || path === normalizePath(this.settings.metricsRoot)) {
+      throw new MetricsMutationError(
+        `Metrics files must stay inside ${this.settings.metricsRoot}.`,
+        "invalid_metrics_path",
+      );
+    }
+
+    return path;
+  }
+
+  private relativeMetricsPath(path: string, options?: { stripExtension?: boolean }): string {
+    const metricsRoot = normalizePath(this.settings.metricsRoot);
+    let relativePath = path.startsWith(`${metricsRoot}/`) ? path.slice(metricsRoot.length + 1) : path;
+    if (options?.stripExtension) {
+      const matchingExtension = this.settings.supportedExtensions.find((extension) =>
+        relativePath.endsWith(extension),
+      );
+      if (matchingExtension) {
+        relativePath = relativePath.slice(0, -matchingExtension.length);
+      }
+    }
+    return relativePath;
+  }
+
+  private relativeMetricsFolderPath(path: string): string {
+    const relativePath = this.relativeMetricsPath(path);
+    const separatorIndex = relativePath.lastIndexOf("/");
+    if (separatorIndex === -1) {
+      return "";
+    }
+    return relativePath.slice(0, separatorIndex + 1);
+  }
+
+  private async ensureParentFolder(path: string): Promise<void> {
+    const parentPath = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+    if (parentPath.length === 0) {
+      return;
+    }
+
+    await this.ensureFolderPath(parentPath);
+  }
+
+  private async ensureFolderPath(path: string): Promise<void> {
+    const normalizedPath = normalizePath(path);
+    if (normalizedPath.length === 0) {
+      return;
+    }
+
+    const existing = this.app.vault.getAbstractFileByPath(normalizedPath);
+    if (existing instanceof TFolder) {
+      return;
+    }
+
+    if (existing instanceof TFile) {
+      throw new MetricsMutationError(`${normalizedPath} already exists as a file.`, "path_conflict");
+    }
+
+    const parentPath = normalizedPath.includes("/")
+      ? normalizedPath.slice(0, normalizedPath.lastIndexOf("/"))
+      : "";
+    if (parentPath.length > 0) {
+      await this.ensureFolderPath(parentPath);
+    }
+
+    await this.app.vault.createFolder(normalizedPath);
+  }
+
+  private async resetDeletedMetricsLeaves(path: string): Promise<void> {
+    const leaves = this.app.workspace.getLeavesOfType(METRICS_VIEW_TYPE);
+    for (const leaf of leaves) {
+      const view = leaf.view;
+      if (!(view instanceof MetricsFileView) || view.file?.path !== path) {
+        continue;
+      }
+
+      await leaf.setViewState({
+        active: leaf === this.app.workspace.activeLeaf,
+        type: METRICS_VIEW_TYPE,
+      });
+    }
   }
 
   private suppressAutoOpenForPath(path: string): void {

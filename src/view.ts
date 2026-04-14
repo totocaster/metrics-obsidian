@@ -1,10 +1,11 @@
 import { Menu, Notice, setIcon, TFile, TextFileView, WorkspaceLeaf } from "obsidian";
 
 import { buildMetricsChartModel } from "./chart-model";
-import { renderMetricsChart } from "./chart-renderer";
+import { renderMetricsChart, type MetricsChartSelection } from "./chart-renderer";
 import { toMetricReference, type MetricRecord } from "./contract";
 import type MetricsPlugin from "./main";
 import { metricIconForKey } from "./metric-icons";
+import { formatMetricDisplayValue } from "./metric-value-format";
 import {
   analyzeMetricsData,
   type ParsedMetricRow,
@@ -52,7 +53,9 @@ function formatMetricValue(row: ParsedMetricRow): string | null {
     return null;
   }
 
-  return typeof unit === "string" ? `${value} ${unit}` : `${value}`;
+  return formatMetricDisplayValue(value, unit, {
+    includeUnit: true,
+  });
 }
 
 function rowTimestamp(row: ParsedMetricRow): number | null {
@@ -99,6 +102,29 @@ function startOfToday(): Date {
 function addDays(date: Date, days: number): Date {
   const next = new Date(date);
   next.setDate(next.getDate() + days);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+
+function addMonths(date: Date, months: number): Date {
+  const next = new Date(date);
+  const originalDay = next.getDate();
+  next.setDate(1);
+  next.setMonth(next.getMonth() + months);
+  const lastDayOfMonth = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+  next.setDate(Math.min(originalDay, lastDayOfMonth));
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+
+function addYears(date: Date, years: number): Date {
+  return addMonths(date, years * 12);
+}
+
+function startOfMonth(date: Date): Date {
+  const next = new Date(date);
+  next.setDate(1);
+  next.setHours(0, 0, 0, 0);
   return next;
 }
 
@@ -107,13 +133,6 @@ function startOfWeek(date: Date): Date {
   const day = next.getDay();
   const offset = day === 0 ? -6 : 1 - day;
   next.setDate(next.getDate() + offset);
-  next.setHours(0, 0, 0, 0);
-  return next;
-}
-
-function startOfMonth(date: Date): Date {
-  const next = new Date(date);
-  next.setDate(1);
   next.setHours(0, 0, 0, 0);
   return next;
 }
@@ -143,6 +162,21 @@ function resolvedTimeRange(viewState: MetricsViewState): {
     case "past-30-days":
       return {
         fromDate: toLocalDateString(addDays(today, -29)),
+        toDate: toLocalDateString(today),
+      };
+    case "past-3-months":
+      return {
+        fromDate: toLocalDateString(addMonths(today, -3)),
+        toDate: toLocalDateString(today),
+      };
+    case "past-6-months":
+      return {
+        fromDate: toLocalDateString(addMonths(today, -6)),
+        toDate: toLocalDateString(today),
+      };
+    case "past-1-year":
+      return {
+        fromDate: toLocalDateString(addYears(today, -1)),
         toDate: toLocalDateString(today),
       };
     case "this-month":
@@ -205,6 +239,10 @@ function withSelectedFilterValue(options: string[], selected: string): string[] 
   }
 
   return [selected, ...options];
+}
+
+function uniqueLineNumbers(lineNumbers: number[]): number[] {
+  return Array.from(new Set(lineNumbers));
 }
 
 function applyMetricsViewState(
@@ -617,6 +655,7 @@ function renderRecord(
   const rowEl = container.createDiv({
     cls: row.status === "valid" ? "metrics-lens-record" : ["metrics-lens-record", `is-${row.status}`],
   });
+  rowEl.dataset.metricsLineNumber = String(row.lineNumber);
   rowEl.tabIndex = -1;
   if (typeof row.metric?.id === "string") {
     rowEl.dataset.metricId = row.metric.id;
@@ -709,8 +748,10 @@ export class MetricsFileView extends TextFileView {
   allowNoFile = true;
   private advancedControlsExpanded = false;
   private addRecordActionEl: HTMLElement | null = null;
+  private actionsSeparatorEl: HTMLElement | null = null;
   private chartActionEl: HTMLElement | null = null;
   private clearTargetedRecordTimeout: number | null = null;
+  private fileActionsActionEl: HTMLElement | null = null;
   private pendingControlFocus: ControlFocusState | null = null;
   private pendingMetricIdFocus: string | null = null;
   private viewState: MetricsViewState = createDefaultViewState();
@@ -791,6 +832,14 @@ export class MetricsFileView extends TextFileView {
   }
 
   private ensureHeaderActions(): void {
+    if (!this.fileActionsActionEl) {
+      this.fileActionsActionEl = this.addAction("files", "Metrics file actions", () => {
+        const actionEl = this.fileActionsActionEl;
+        const rect = actionEl?.getBoundingClientRect();
+        this.plugin.openMetricsFileActionsMenu(this.file, rect ?? undefined);
+      });
+    }
+
     if (!this.chartActionEl) {
       this.chartActionEl = this.addAction("chart-line", "Show chart", () => {
         if (!this.file) {
@@ -815,18 +864,39 @@ export class MetricsFileView extends TextFileView {
       });
     }
 
-    if (this.addRecordActionEl?.parentElement && !this.viewActionSeparatorEl) {
+    if (
+      this.addRecordActionEl?.parentElement &&
+      this.chartActionEl?.parentElement &&
+      !this.viewActionSeparatorEl
+    ) {
       const separator = this.addRecordActionEl.parentElement.createDiv({
         cls: "metrics-lens-view-action-separator",
       });
-      this.addRecordActionEl.parentElement.insertBefore(separator, this.addRecordActionEl);
+      this.addRecordActionEl.parentElement.insertBefore(separator, this.chartActionEl);
       this.viewActionSeparatorEl = separator;
+    }
+
+    if (
+      this.chartActionEl?.parentElement &&
+      this.fileActionsActionEl?.parentElement &&
+      !this.actionsSeparatorEl
+    ) {
+      const separator = this.fileActionsActionEl.parentElement.createDiv({
+        cls: "metrics-lens-view-action-separator",
+      });
+      this.chartActionEl.parentElement.insertBefore(separator, this.fileActionsActionEl);
+      this.actionsSeparatorEl = separator;
     }
 
     this.syncHeaderActions();
   }
 
   private syncHeaderActions(): void {
+    if (this.fileActionsActionEl) {
+      this.fileActionsActionEl.setAttribute("aria-label", "Metrics file actions");
+      this.fileActionsActionEl.setAttribute("data-tooltip-position", "bottom");
+    }
+
     if (this.chartActionEl) {
       this.chartActionEl.toggleClass("is-active", this.viewState.showChart);
       this.chartActionEl.setAttribute(
@@ -862,7 +932,11 @@ export class MetricsFileView extends TextFileView {
       return;
     }
 
-    renderMetricsChart(container, chartModel);
+    renderMetricsChart(container, chartModel, {
+      onSelect: (selection) => {
+        this.focusChartSelection(selection);
+      },
+    });
   }
 
   private render(): void {
@@ -1035,6 +1109,9 @@ export class MetricsFileView extends TextFileView {
       { label: "This week", value: "this-week" },
       { label: "Past 7 days", value: "past-7-days" },
       { label: "Past 30 days", value: "past-30-days" },
+      { label: "Past 3 months", value: "past-3-months" },
+      { label: "Past 6 months", value: "past-6-months" },
+      { label: "Past 1 year", value: "past-1-year" },
       { label: "This month", value: "this-month" },
       { label: "Custom range", value: "custom" },
     ].forEach((option) => {
@@ -1306,19 +1383,57 @@ export class MetricsFileView extends TextFileView {
 
     this.pendingMetricIdFocus = null;
 
-    targetEl.addClass("is-targeted");
-    targetEl.scrollIntoView({
-      block: "center",
-      behavior: "smooth",
-    });
-    targetEl.focus({ preventScroll: true });
+    this.highlightRecordElements([targetEl]);
+  }
+
+  private focusChartSelection(selection: MetricsChartSelection): void {
+    const targetElements = uniqueLineNumbers(selection.lineNumbers)
+      .map((lineNumber) =>
+        this.contentEl.querySelector<HTMLElement>(`[data-metrics-line-number="${lineNumber}"]`),
+      )
+      .filter((element): element is HTMLElement => element !== null);
+
+    if (targetElements.length === 0) {
+      new Notice(`No visible rows matched ${selection.bucketLabel}.`);
+      return;
+    }
+
+    this.highlightRecordElements(targetElements);
+  }
+
+  private highlightRecordElements(targetElements: HTMLElement[]): void {
+    if (targetElements.length === 0) {
+      return;
+    }
 
     if (this.clearTargetedRecordTimeout !== null) {
       window.clearTimeout(this.clearTargetedRecordTimeout);
+      this.clearTargetedRecordTimeout = null;
     }
 
+    this.contentEl
+      .querySelectorAll<HTMLElement>(".metrics-lens-record.is-targeted")
+      .forEach((element) => element.removeClass("is-targeted"));
+
+    targetElements.forEach((element) => {
+      element.addClass("is-targeted");
+    });
+
+    const firstTarget = targetElements[0];
+    if (!firstTarget) {
+      return;
+    }
+
+    firstTarget.scrollIntoView({
+      block: "center",
+      behavior: "smooth",
+    });
+    firstTarget.focus({ preventScroll: true });
+
     this.clearTargetedRecordTimeout = window.setTimeout(() => {
-      targetEl.removeClass("is-targeted");
+      targetElements.forEach((element) => {
+        element.removeClass("is-targeted");
+      });
       this.clearTargetedRecordTimeout = null;
     }, 1800);
   }

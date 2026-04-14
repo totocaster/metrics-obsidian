@@ -9,6 +9,9 @@ export type MetricsTimeRange =
   | "this-week"
   | "past-7-days"
   | "past-30-days"
+  | "past-3-months"
+  | "past-6-months"
+  | "past-1-year"
   | "this-month"
   | "custom";
 
@@ -69,6 +72,9 @@ function normalizeTimeRange(value: unknown): MetricsTimeRange {
     value === "this-week" ||
     value === "past-7-days" ||
     value === "past-30-days" ||
+    value === "past-3-months" ||
+    value === "past-6-months" ||
+    value === "past-1-year" ||
     value === "this-month" ||
     value === "custom"
     ? value

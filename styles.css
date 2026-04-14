@@ -23,18 +23,28 @@
 .metrics-lens-primary-controls,
 .metrics-lens-advanced-controls {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: var(--size-4-2);
 }
 
+.metrics-lens-primary-controls {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.metrics-lens-advanced-controls {
+  flex-wrap: wrap;
+}
+
 .metrics-lens-control {
+  min-width: 0;
   max-width: 100%;
 }
 
 .metrics-lens-search {
   flex: 1 1 16rem;
-  min-width: 12rem;
+  min-width: 8rem;
 }
 
 .metrics-lens-reset-view-button {
@@ -49,6 +59,11 @@
 
 .metrics-lens-more-controls-button.is-active {
   color: var(--text-accent);
+}
+
+.metrics-lens-primary-controls > [data-metrics-control="more"] {
+  margin-left: auto;
+  flex: 0 0 auto;
 }
 
 .metrics-lens-view-action-separator {
@@ -201,8 +216,16 @@
 }
 
 .metrics-lens-chart-hover-region {
-  cursor: crosshair;
+  cursor: pointer;
   fill: transparent;
+}
+
+.metrics-lens-chart-hover-region:focus-visible {
+  fill: var(--interactive-hover);
+  fill-opacity: 0.08;
+  stroke: var(--background-modifier-border-focus);
+  stroke-opacity: 0.5;
+  stroke-width: 1;
 }
 
 .metrics-lens-chart-tooltip {
@@ -315,8 +338,10 @@
 .metrics-lens-validation,
 .metrics-lens-issues {
   margin: 0;
-  padding-left: var(--size-4-4);
+  padding-left: 0;
+  list-style: none;
   color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
 }
 
 .metrics-lens-validation li + li,
@@ -324,9 +349,22 @@
   margin-top: var(--size-4-1);
 }
 
+.metrics-lens-validation li,
+.metrics-lens-issues li {
+  padding: var(--size-2-2) var(--size-4-2);
+  border-radius: var(--radius-s);
+  background-color: rgba(var(--color-yellow-rgb), 0.14);
+  line-height: var(--line-height-tight);
+}
+
+.metrics-lens-validation .is-warning,
+.metrics-lens-issues .is-warning {
+  color: var(--text-normal);
+}
+
 .metrics-lens-validation .is-error,
 .metrics-lens-issues .is-error {
-  color: var(--color-red);
+  color: var(--text-error);
 }
 
 .metrics-lens-records {

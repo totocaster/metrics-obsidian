@@ -23,7 +23,7 @@ __export(main_exports, {
   default: () => MetricsPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian6 = require("obsidian");
+var import_obsidian7 = require("obsidian");
 
 // src/contract.ts
 var METRIC_REFERENCE_PREFIX = "metric:";
@@ -939,8 +939,73 @@ function deleteMetricRecordFromMetricsData(data, targetId) {
   };
 }
 
-// src/settings.ts
+// src/metrics-file-modal.ts
 var import_obsidian3 = require("obsidian");
+var MetricsFileModal = class extends import_obsidian3.Modal {
+  onSubmitValue;
+  options;
+  constructor(app, options, onSubmitValue) {
+    super(app);
+    this.options = options;
+    this.onSubmitValue = onSubmitValue;
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h2", { text: this.options.title });
+    contentEl.createEl("p", {
+      text: this.options.description
+    });
+    let value = this.options.initialValue ?? "";
+    const inputSetting = new import_obsidian3.Setting(contentEl).setName(this.options.fieldLabel);
+    let submit = null;
+    inputSetting.addText((text) => {
+      text.setPlaceholder(this.options.placeholder);
+      text.setValue(value);
+      text.onChange((nextValue) => {
+        value = nextValue;
+      });
+      text.inputEl.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter") {
+          return;
+        }
+        event.preventDefault();
+        submit?.();
+      });
+      window.setTimeout(() => {
+        text.inputEl.focus();
+        text.inputEl.select();
+      }, 0);
+    });
+    const actions = contentEl.createDiv({ cls: "metrics-lens-actions" });
+    const cancelButton = actions.createEl("button", { text: "Cancel" });
+    cancelButton.type = "button";
+    cancelButton.addEventListener("click", () => {
+      this.close();
+    });
+    const submitButton = actions.createEl("button", {
+      cls: "mod-cta",
+      text: this.options.submitLabel
+    });
+    submitButton.type = "button";
+    submitButton.setAttribute("aria-label", this.options.submitLabel);
+    submit = () => {
+      const normalizedValue = value.trim();
+      if (normalizedValue.length === 0) {
+        new import_obsidian3.Notice(`${this.options.fieldLabel} is required.`);
+        return;
+      }
+      this.onSubmitValue(normalizedValue);
+      this.close();
+    };
+    submitButton.addEventListener("click", () => {
+      submit?.();
+    });
+  }
+};
+
+// src/settings.ts
+var import_obsidian4 = require("obsidian");
 
 // src/view-state.ts
 var DEFAULT_VIEW_STATE = {
@@ -968,7 +1033,7 @@ function normalizeStatus(value) {
   return value === "valid" || value === "warning" || value === "error" ? value : "all";
 }
 function normalizeTimeRange(value) {
-  return value === "today" || value === "this-week" || value === "past-7-days" || value === "past-30-days" || value === "this-month" || value === "custom" ? value : "all";
+  return value === "today" || value === "this-week" || value === "past-7-days" || value === "past-30-days" || value === "past-3-months" || value === "past-6-months" || value === "past-1-year" || value === "this-month" || value === "custom" ? value : "all";
 }
 function normalizeString(value) {
   return typeof value === "string" ? value : "";
@@ -1007,13 +1072,13 @@ function normalizeMetricsSettings(settings) {
   const supportedExtensions = settings.supportedExtensions?.length ? settings.supportedExtensions : DEFAULT_SETTINGS.supportedExtensions;
   const persistedViewStateByPath = Object.fromEntries(
     Object.entries(settings.persistedViewStateByPath ?? {}).map(([path, value]) => [
-      (0, import_obsidian3.normalizePath)(path),
+      (0, import_obsidian4.normalizePath)(path),
       normalizePersistedMetricsViewState(value)
     ])
   );
   return {
-    defaultWriteFile: (0, import_obsidian3.normalizePath)(settings.defaultWriteFile ?? DEFAULT_SETTINGS.defaultWriteFile),
-    metricsRoot: (0, import_obsidian3.normalizePath)(settings.metricsRoot ?? DEFAULT_SETTINGS.metricsRoot),
+    defaultWriteFile: (0, import_obsidian4.normalizePath)(settings.defaultWriteFile ?? DEFAULT_SETTINGS.defaultWriteFile),
+    metricsRoot: (0, import_obsidian4.normalizePath)(settings.metricsRoot ?? DEFAULT_SETTINGS.metricsRoot),
     persistedViewStateByPath,
     recordReferencePrefix: settings.recordReferencePrefix?.trim() || DEFAULT_SETTINGS.recordReferencePrefix,
     showMetricIcons: settings.showMetricIcons ?? DEFAULT_SETTINGS.showMetricIcons,
@@ -1030,7 +1095,7 @@ function formatExtensions(extensions) {
 function parseExtensions(value) {
   return value.split(",").map((item) => item.trim()).filter((item) => item.length > 0);
 }
-var MetricsSettingTab = class extends import_obsidian3.PluginSettingTab {
+var MetricsSettingTab = class extends import_obsidian4.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
@@ -1039,17 +1104,17 @@ var MetricsSettingTab = class extends import_obsidian3.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    new import_obsidian3.Setting(containerEl).setName("Storage").setHeading();
-    new import_obsidian3.Setting(containerEl).setName("Metrics root folder").setDesc("Folder scanned for canonical metrics files.").addText((text) => {
+    new import_obsidian4.Setting(containerEl).setName("Storage").setHeading();
+    new import_obsidian4.Setting(containerEl).setName("Metrics root folder").setDesc("Folder scanned for canonical metrics files.").addText((text) => {
       text.setPlaceholder(DEFAULT_SETTINGS.metricsRoot);
       text.setValue(this.plugin.settings.metricsRoot);
       text.onChange(async (value) => {
-        this.plugin.settings.metricsRoot = (0, import_obsidian3.normalizePath)(value || DEFAULT_SETTINGS.metricsRoot);
+        this.plugin.settings.metricsRoot = (0, import_obsidian4.normalizePath)(value || DEFAULT_SETTINGS.metricsRoot);
         await this.plugin.saveSettings();
         this.plugin.refreshOpenMetricsViews();
       });
     });
-    new import_obsidian3.Setting(containerEl).setName("Supported extensions").setDesc("Comma-separated list of file suffixes treated as metrics files.").addText((text) => {
+    new import_obsidian4.Setting(containerEl).setName("Supported extensions").setDesc("Comma-separated list of file suffixes treated as metrics files.").addText((text) => {
       text.setPlaceholder(formatExtensions(DEFAULT_SETTINGS.supportedExtensions));
       text.setValue(formatExtensions(this.plugin.settings.supportedExtensions));
       text.onChange(async (value) => {
@@ -1058,18 +1123,18 @@ var MetricsSettingTab = class extends import_obsidian3.PluginSettingTab {
         this.plugin.refreshOpenMetricsViews();
       });
     });
-    new import_obsidian3.Setting(containerEl).setName("Default write file").setDesc("Default target file used by future create and append actions.").addText((text) => {
+    new import_obsidian4.Setting(containerEl).setName("Default write file").setDesc("Default target file used by future create and append actions.").addText((text) => {
       text.setPlaceholder(DEFAULT_SETTINGS.defaultWriteFile);
       text.setValue(this.plugin.settings.defaultWriteFile);
       text.onChange(async (value) => {
-        this.plugin.settings.defaultWriteFile = (0, import_obsidian3.normalizePath)(
+        this.plugin.settings.defaultWriteFile = (0, import_obsidian4.normalizePath)(
           value || DEFAULT_SETTINGS.defaultWriteFile
         );
         await this.plugin.saveSettings();
         this.plugin.refreshOpenMetricsViews();
       });
     });
-    new import_obsidian3.Setting(containerEl).setName("Record reference prefix").setDesc("Plain-text prefix used for stable metric references in Markdown.").addText((text) => {
+    new import_obsidian4.Setting(containerEl).setName("Record reference prefix").setDesc("Plain-text prefix used for stable metric references in Markdown.").addText((text) => {
       text.setPlaceholder(DEFAULT_SETTINGS.recordReferencePrefix);
       text.setValue(this.plugin.settings.recordReferencePrefix);
       text.onChange(async (value) => {
@@ -1078,8 +1143,8 @@ var MetricsSettingTab = class extends import_obsidian3.PluginSettingTab {
         this.plugin.refreshOpenMetricsViews();
       });
     });
-    new import_obsidian3.Setting(containerEl).setName("Appearance").setHeading();
-    new import_obsidian3.Setting(containerEl).setName("Show metric icons").setDesc("Show mapped Lucide icons next to metrics when the icon exists in Obsidian.").addToggle((toggle) => {
+    new import_obsidian4.Setting(containerEl).setName("Appearance").setHeading();
+    new import_obsidian4.Setting(containerEl).setName("Show metric icons").setDesc("Show mapped Lucide icons next to metrics when the icon exists in Obsidian.").addToggle((toggle) => {
       toggle.setValue(this.plugin.settings.showMetricIcons);
       toggle.onChange(async (value) => {
         this.plugin.settings.showMetricIcons = value;
@@ -1091,7 +1156,7 @@ var MetricsSettingTab = class extends import_obsidian3.PluginSettingTab {
 };
 
 // src/view.ts
-var import_obsidian5 = require("obsidian");
+var import_obsidian6 = require("obsidian");
 
 // src/chart-model.ts
 var NO_UNIT_KEY = "__no_unit__";
@@ -1127,6 +1192,9 @@ function startOfDayTimestamp(day) {
 }
 function uniqueStrings(values) {
   return Array.from(new Set(values));
+}
+function appendUniqueLineNumber(lineNumbers, lineNumber) {
+  return lineNumbers.includes(lineNumber) ? lineNumbers : [...lineNumbers, lineNumber];
 }
 function clampPrecision(value) {
   return Math.max(0, Math.min(MAX_CHART_PRECISION, value));
@@ -1233,6 +1301,7 @@ function buildDailyPanel(rows, unitKey, unitLabel) {
   const seriesOrder = uniqueStrings(
     rows.map((row) => row.metric?.key).filter((value) => typeof value === "string" && value.length > 0)
   );
+  const bucketLineNumbers = /* @__PURE__ */ new Map();
   const bucketTimestamps = /* @__PURE__ */ new Map();
   const stackSegments = /* @__PURE__ */ new Map();
   rows.forEach((row) => {
@@ -1250,11 +1319,16 @@ function buildDailyPanel(rows, unitKey, unitLabel) {
       return;
     }
     bucketTimestamps.set(bucketKey, bucketTimestamp);
+    bucketLineNumbers.set(
+      bucketKey,
+      appendUniqueLineNumber(bucketLineNumbers.get(bucketKey) ?? [], row.lineNumber)
+    );
     const segments = stackSegments.get(bucketKey) ?? [];
     segments.push({
       bucketKey,
       key,
       label: key,
+      lineNumbers: [row.lineNumber],
       precision: rawValuePrecision(row),
       timestamp: rowTimestamp(row) ?? bucketTimestamp,
       value
@@ -1264,6 +1338,7 @@ function buildDailyPanel(rows, unitKey, unitLabel) {
   const buckets = Array.from(bucketTimestamps.entries()).sort((left, right) => (left[1] ?? Number.NEGATIVE_INFINITY) - (right[1] ?? Number.NEGATIVE_INFINITY)).map(([key, timestamp]) => ({
     key,
     label: key,
+    lineNumbers: bucketLineNumbers.get(key) ?? [],
     timestamp
   }));
   if (buckets.length === 0) {
@@ -1305,6 +1380,7 @@ function buildTemporalPanel(rows, unitKey, unitLabel, bucketByDay) {
   const seriesOrder = uniqueStrings(
     rows.map((row) => row.metric?.key).filter((value) => typeof value === "string" && value.length > 0)
   );
+  const bucketLineNumbers = /* @__PURE__ */ new Map();
   const bucketTimestamps = /* @__PURE__ */ new Map();
   const seriesPointMaps = /* @__PURE__ */ new Map();
   rows.forEach((row) => {
@@ -1323,21 +1399,29 @@ function buildTemporalPanel(rows, unitKey, unitLabel, bucketByDay) {
       return;
     }
     bucketTimestamps.set(bucketKey, bucketTimestamp);
+    bucketLineNumbers.set(
+      bucketKey,
+      appendUniqueLineNumber(bucketLineNumbers.get(bucketKey) ?? [], row.lineNumber)
+    );
     const pointMap = seriesPointMaps.get(key) ?? /* @__PURE__ */ new Map();
     const existing = pointMap.get(bucketKey);
     if (!existing || (timestamp ?? bucketTimestamp) > (existing.timestamp ?? Number.NEGATIVE_INFINITY)) {
       pointMap.set(bucketKey, {
         bucketKey,
+        lineNumbers: appendUniqueLineNumber(existing?.lineNumbers ?? [], row.lineNumber),
         precision: rawValuePrecision(row),
         timestamp: bucketTimestamp,
         value
       });
-      seriesPointMaps.set(key, pointMap);
+    } else {
+      existing.lineNumbers = appendUniqueLineNumber(existing.lineNumbers, row.lineNumber);
     }
+    seriesPointMaps.set(key, pointMap);
   });
   const buckets = Array.from(bucketTimestamps.entries()).sort((left, right) => (left[1] ?? Number.NEGATIVE_INFINITY) - (right[1] ?? Number.NEGATIVE_INFINITY)).map(([key, timestamp]) => ({
     key,
     label: key,
+    lineNumbers: bucketLineNumbers.get(key) ?? [],
     timestamp
   }));
   if (buckets.length === 0) {
@@ -1374,6 +1458,7 @@ function buildTemporalPanel(rows, unitKey, unitLabel, bucketByDay) {
 }
 function buildSourcePanel(rows, unitKey, unitLabel) {
   const valuePrecision = maxPrecisionForRows(rows);
+  const bucketLineNumbers = /* @__PURE__ */ new Map();
   const bucketKeys = uniqueStrings(
     rows.map((row) => {
       const source = row.metric?.source;
@@ -1391,20 +1476,29 @@ function buildSourcePanel(rows, unitKey, unitLabel) {
       return;
     }
     const source = typeof row.metric?.source === "string" && row.metric.source.length > 0 ? row.metric.source : "No source";
+    bucketLineNumbers.set(
+      source,
+      appendUniqueLineNumber(bucketLineNumbers.get(source) ?? [], row.lineNumber)
+    );
     const pointMap = pointMaps.get(key) ?? /* @__PURE__ */ new Map();
-    if (!pointMap.has(source)) {
+    const existing = pointMap.get(source);
+    if (!existing) {
       pointMap.set(source, {
         bucketKey: source,
+        lineNumbers: [row.lineNumber],
         precision: rawValuePrecision(row),
         timestamp: rowTimestamp(row),
         value
       });
-      pointMaps.set(key, pointMap);
+    } else {
+      existing.lineNumbers = appendUniqueLineNumber(existing.lineNumbers, row.lineNumber);
     }
+    pointMaps.set(key, pointMap);
   });
   const buckets = bucketKeys.map((key) => ({
     key,
     label: key,
+    lineNumbers: bucketLineNumbers.get(key) ?? [],
     timestamp: null
   }));
   const series = seriesOrder.map((key) => {
@@ -1443,9 +1537,12 @@ function buildKeyPanel(rows, unitKey, unitLabel) {
       const key = row.metric?.key;
       return typeof key === "string" && key.length > 0 ? key : "No metric";
     })
-  ).map((key) => ({
+  );
+  const bucketLineNumbers = /* @__PURE__ */ new Map();
+  const bucketDefs = buckets.map((key) => ({
     key,
     label: key,
+    lineNumbers: bucketLineNumbers.get(key) ?? [],
     timestamp: null
   }));
   const pointMap = /* @__PURE__ */ new Map();
@@ -1455,20 +1552,30 @@ function buildKeyPanel(rows, unitKey, unitLabel) {
     if (typeof key !== "string" || typeof value !== "number" || !Number.isFinite(value)) {
       return;
     }
+    bucketLineNumbers.set(
+      key,
+      appendUniqueLineNumber(bucketLineNumbers.get(key) ?? [], row.lineNumber)
+    );
     if (!pointMap.has(key)) {
       pointMap.set(key, {
         bucketKey: key,
+        lineNumbers: [row.lineNumber],
         precision: rawValuePrecision(row),
         timestamp: rowTimestamp(row),
         value
       });
+      return;
+    }
+    const existing = pointMap.get(key);
+    if (existing) {
+      existing.lineNumbers = appendUniqueLineNumber(existing.lineNumbers, row.lineNumber);
     }
   });
   const series = [
     {
       key: "value",
       label: unitLabel ?? "Value",
-      points: buckets.map((bucket) => pointMap.get(bucket.key)).filter((point) => point !== void 0)
+      points: bucketDefs.map((bucket) => pointMap.get(bucket.key)).filter((point) => point !== void 0)
     }
   ];
   const valueRange = collectValueRange(series);
@@ -1478,7 +1585,10 @@ function buildKeyPanel(rows, unitKey, unitLabel) {
   return {
     axisKind: "category",
     axisPrecision: resolveAxisPrecision(valueRange.minValue, valueRange.maxValue, valuePrecision),
-    buckets,
+    buckets: bucketDefs.map((bucket) => ({
+      ...bucket,
+      lineNumbers: bucketLineNumbers.get(bucket.key) ?? []
+    })),
     kind: "bar",
     maxValue: valueRange.maxValue,
     minValue: valueRange.minValue,
@@ -1536,6 +1646,57 @@ function buildMetricsChartModel(rows, groupBy) {
   };
 }
 
+// src/metric-value-format.ts
+function normalizeDurationUnit(unit) {
+  if (!unit) {
+    return null;
+  }
+  const normalizedUnit = unit.trim().toLowerCase();
+  if (normalizedUnit === "min") {
+    return "min";
+  }
+  if (normalizedUnit === "sec") {
+    return "sec";
+  }
+  return null;
+}
+function formatDurationValue(value, durationUnit) {
+  const sign = value < 0 ? "-" : "";
+  const totalSeconds = Math.round(Math.abs(durationUnit === "min" ? value * 60 : value));
+  if (totalSeconds === 0) {
+    return "0s";
+  }
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor(totalSeconds % 3600 / 60);
+  const seconds = totalSeconds % 60;
+  const parts = [];
+  if (hours > 0) {
+    parts.push(`${hours}h`);
+  }
+  if (minutes > 0) {
+    parts.push(`${minutes}m`);
+  }
+  if (seconds > 0 || parts.length === 0) {
+    parts.push(`${seconds}s`);
+  }
+  return `${sign}${parts.join(" ")}`;
+}
+function formatMetricDisplayValue(value, unit, options) {
+  const durationUnit = normalizeDurationUnit(unit);
+  if (durationUnit) {
+    return formatDurationValue(value, durationUnit);
+  }
+  const decimals = options?.decimals ?? 0;
+  const formattedValue = value.toLocaleString(void 0, {
+    maximumFractionDigits: decimals,
+    minimumFractionDigits: decimals
+  });
+  if (options?.includeUnit && typeof unit === "string" && unit.length > 0) {
+    return `${formattedValue} ${unit}`;
+  }
+  return formattedValue;
+}
+
 // src/chart-renderer.ts
 var SVG_NS = "http://www.w3.org/2000/svg";
 var CHART_WIDTH = 640;
@@ -1553,10 +1714,10 @@ function createSvgEl(tagName, attributes) {
   }
   return element;
 }
-function formatChartValue(value, decimals) {
-  return value.toLocaleString(void 0, {
-    maximumFractionDigits: decimals,
-    minimumFractionDigits: decimals
+function formatChartValue(value, decimals, unit) {
+  return formatMetricDisplayValue(value, unit, {
+    decimals,
+    includeUnit: false
   });
 }
 function formatBucketLabel(bucket, axisKind) {
@@ -1590,6 +1751,9 @@ function formatSegmentTime(timestamp) {
     hour: "2-digit",
     minute: "2-digit"
   }).format(timestamp);
+}
+function uniqueLineNumbers(lineNumbers) {
+  return Array.from(new Set(lineNumbers));
 }
 function colorClass(index) {
   return `metrics-lens-chart-series-${index % 6}`;
@@ -1759,7 +1923,7 @@ function appendYAxis(svg, panel) {
       x: PLOT_LEFT - 8,
       y: y + 4
     });
-    label.textContent = formatChartValue(value, panel.axisPrecision);
+    label.textContent = formatChartValue(value, panel.axisPrecision, panel.unitLabel);
     svg.appendChild(label);
   });
   const zeroY = yForValue(baselineValue);
@@ -1821,6 +1985,7 @@ function lineHoverTargets(panel, xForTimestamp, visibleKeys, colorClasses) {
       return {
         colorClass: colorClasses.get(series.key) ?? colorClass(0),
         label: series.label,
+        lineNumbers: point.lineNumbers,
         precision: point.precision,
         value: point.value
       };
@@ -1834,6 +1999,7 @@ function lineHoverTargets(panel, xForTimestamp, visibleKeys, colorClasses) {
     return {
       bucket,
       entries,
+      lineNumbers: uniqueLineNumbers(entries.flatMap((entry) => entry.lineNumbers)),
       x,
       xEnd,
       xStart
@@ -1861,10 +2027,12 @@ function barHoverTargets(panel, bucketWidth, visibleKeys, colorClasses) {
           return {
             colorClass: colorClasses.get(segment.key) ?? colorClass(0),
             label: timeLabel ? `${segment.label} ${timeLabel}` : segment.label,
+            lineNumbers: segment.lineNumbers,
             precision: segment.precision,
             value: segment.value
           };
         }),
+        lineNumbers: uniqueLineNumbers(segments.flatMap((segment) => segment.lineNumbers)),
         x,
         xEnd,
         xStart
@@ -1878,6 +2046,7 @@ function barHoverTargets(panel, bucketWidth, visibleKeys, colorClasses) {
       return {
         colorClass: colorClasses.get(series.key) ?? colorClass(0),
         label: series.label,
+        lineNumbers: point.lineNumbers,
         precision: point.precision,
         value: point.value
       };
@@ -1888,6 +2057,7 @@ function barHoverTargets(panel, bucketWidth, visibleKeys, colorClasses) {
     return {
       bucket,
       entries,
+      lineNumbers: uniqueLineNumbers(entries.flatMap((entry) => entry.lineNumbers)),
       x,
       xEnd,
       xStart
@@ -1916,11 +2086,11 @@ function renderTooltip(tooltipEl, panel, target) {
     });
     row.createSpan({
       cls: "metrics-lens-chart-tooltip-value",
-      text: formatChartValue(entry.value, entry.precision)
+      text: formatChartValue(entry.value, entry.precision, panel.unitLabel)
     });
   });
 }
-function attachHoverTargets(panelEl, svg, panel, targets) {
+function attachHoverTargets(panelEl, svg, panel, targets, onSelect) {
   if (targets.length === 0) {
     return;
   }
@@ -1962,14 +2132,41 @@ function attachHoverTargets(panelEl, svg, panel, targets) {
       x: target.xStart,
       y: PLOT_TOP
     });
+    region.setAttribute("aria-label", `Focus ${formatBucketHeading(target.bucket, panel.axisKind)} in timeline`);
+    region.setAttribute("role", "button");
+    region.setAttribute("tabindex", "0");
     region.addEventListener("mouseenter", () => {
       showTarget(target);
     });
     region.addEventListener("mousemove", () => {
       showTarget(target);
     });
+    region.addEventListener("focus", () => {
+      showTarget(target);
+    });
     region.addEventListener("mouseleave", () => {
       hideTarget();
+    });
+    region.addEventListener("blur", () => {
+      hideTarget();
+    });
+    region.addEventListener("click", () => {
+      onSelect?.({
+        bucketKey: target.bucket.key,
+        bucketLabel: formatBucketHeading(target.bucket, panel.axisKind),
+        lineNumbers: target.lineNumbers.length > 0 ? target.lineNumbers : uniqueLineNumbers(target.bucket.lineNumbers)
+      });
+    });
+    region.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") {
+        return;
+      }
+      event.preventDefault();
+      onSelect?.({
+        bucketKey: target.bucket.key,
+        bucketLabel: formatBucketHeading(target.bucket, panel.axisKind),
+        lineNumbers: target.lineNumbers.length > 0 ? target.lineNumbers : uniqueLineNumbers(target.bucket.lineNumbers)
+      });
     });
     overlay.appendChild(region);
   });
@@ -1978,7 +2175,7 @@ function attachHoverTargets(panelEl, svg, panel, targets) {
     hideTarget();
   };
 }
-function renderLineChart(svg, panel, panelWidth) {
+function renderLineChart(svg, panel, panelWidth, onSelect) {
   const { plotWidth, yForValue } = appendYAxis(svg, panel);
   const timestamps = panel.buckets.map((bucket) => bucket.timestamp).filter((value) => typeof value === "number");
   const minTimestamp = Math.min(...timestamps);
@@ -2021,9 +2218,9 @@ function renderLineChart(svg, panel, panelWidth) {
   const layout = xAxisLayout(panel, panelWidth, (bucket) => xForTimestamp(bucket.timestamp));
   appendXAxisLabels(svg, layout, panel.axisKind);
   const targets = lineHoverTargets(panel, xForTimestamp, visibleKeys, colorClasses);
-  attachHoverTargets(svg.parentElement, svg, panel, targets);
+  attachHoverTargets(svg.parentElement, svg, panel, targets, onSelect);
 }
-function renderBarChart(svg, panel, panelWidth) {
+function renderBarChart(svg, panel, panelWidth, onSelect) {
   const { baselineValue, plotWidth, zeroY, yForValue } = appendYAxis(svg, panel);
   const seriesCount = Math.max(panel.series.length, 1);
   const bucketWidth = plotWidth / Math.max(panel.buckets.length, 1);
@@ -2084,7 +2281,7 @@ function renderBarChart(svg, panel, panelWidth) {
   const layout = xAxisLayout(panel, panelWidth, (_bucket, index) => PLOT_LEFT + index * bucketWidth + bucketWidth / 2);
   appendXAxisLabels(svg, layout, panel.axisKind);
   const targets = barHoverTargets(panel, bucketWidth, visibleKeys, colorClasses);
-  attachHoverTargets(svg.parentElement, svg, panel, targets);
+  attachHoverTargets(svg.parentElement, svg, panel, targets, onSelect);
 }
 function renderLegend(container, panel, state, onChange) {
   container.empty();
@@ -2169,7 +2366,7 @@ function chartPanelTitle(panel) {
   }
   return seriesLabels.join(", ");
 }
-function renderPanel(container, panel, model) {
+function renderPanel(container, panel, model, options) {
   const panelEl = container.createDiv({ cls: "metrics-lens-chart-panel" });
   if (model.panelCount > 1) {
     panelEl.createEl("p", {
@@ -2199,27 +2396,27 @@ function renderPanel(container, panel, model) {
     panelEl.appendChild(svg);
     const panelWidth = panelEl.getBoundingClientRect().width || CHART_WIDTH;
     if (current.kind === "line") {
-      renderLineChart(svg, current, panelWidth);
+      renderLineChart(svg, current, panelWidth, options?.onSelect);
     } else {
-      renderBarChart(svg, current, panelWidth);
+      renderBarChart(svg, current, panelWidth, options?.onSelect);
     }
   };
   renderCurrentPanel();
 }
-function renderMetricsChart(container, model) {
+function renderMetricsChart(container, model, options) {
   const chartSection = container.createDiv({ cls: ["metrics-lens-section", "metrics-lens-chart"] });
   const panels = chartSection.createDiv({ cls: "metrics-lens-chart-panels" });
   model.panels.forEach((panel) => {
-    renderPanel(panels, panel, model);
+    renderPanel(panels, panel, model, options);
   });
 }
 
 // src/metric-icons.ts
-var import_obsidian4 = require("obsidian");
+var import_obsidian5 = require("obsidian");
 var cachedIconIds = null;
 var cachedIconCount = -1;
 function availableIconIds() {
-  const iconIds = (0, import_obsidian4.getIconIds)();
+  const iconIds = (0, import_obsidian5.getIconIds)();
   if (!cachedIconIds || cachedIconCount !== iconIds.length) {
     cachedIconIds = new Set(iconIds);
     cachedIconCount = iconIds.length;
@@ -2299,7 +2496,9 @@ function formatMetricValue(row) {
   if (typeof value !== "number") {
     return null;
   }
-  return typeof unit === "string" ? `${value} ${unit}` : `${value}`;
+  return formatMetricDisplayValue(value, unit, {
+    includeUnit: true
+  });
 }
 function rowTimestamp2(row) {
   const ts = row.metric?.ts;
@@ -2337,6 +2536,26 @@ function startOfToday() {
 function addDays(date, days) {
   const next = new Date(date);
   next.setDate(next.getDate() + days);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+function addMonths(date, months) {
+  const next = new Date(date);
+  const originalDay = next.getDate();
+  next.setDate(1);
+  next.setMonth(next.getMonth() + months);
+  const lastDayOfMonth = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+  next.setDate(Math.min(originalDay, lastDayOfMonth));
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+function addYears(date, years) {
+  return addMonths(date, years * 12);
+}
+function startOfMonth(date) {
+  const next = new Date(date);
+  next.setDate(1);
+  next.setHours(0, 0, 0, 0);
   return next;
 }
 function startOfWeek(date) {
@@ -2344,12 +2563,6 @@ function startOfWeek(date) {
   const day = next.getDay();
   const offset = day === 0 ? -6 : 1 - day;
   next.setDate(next.getDate() + offset);
-  next.setHours(0, 0, 0, 0);
-  return next;
-}
-function startOfMonth(date) {
-  const next = new Date(date);
-  next.setDate(1);
   next.setHours(0, 0, 0, 0);
   return next;
 }
@@ -2374,6 +2587,21 @@ function resolvedTimeRange(viewState) {
     case "past-30-days":
       return {
         fromDate: toLocalDateString(addDays(today, -29)),
+        toDate: toLocalDateString(today)
+      };
+    case "past-3-months":
+      return {
+        fromDate: toLocalDateString(addMonths(today, -3)),
+        toDate: toLocalDateString(today)
+      };
+    case "past-6-months":
+      return {
+        fromDate: toLocalDateString(addMonths(today, -6)),
+        toDate: toLocalDateString(today)
+      };
+    case "past-1-year":
+      return {
+        fromDate: toLocalDateString(addYears(today, -1)),
         toDate: toLocalDateString(today)
       };
     case "this-month":
@@ -2422,6 +2650,9 @@ function withSelectedFilterValue(options, selected) {
     return options;
   }
   return [selected, ...options];
+}
+function uniqueLineNumbers2(lineNumbers) {
+  return Array.from(new Set(lineNumbers));
 }
 function applyMetricsViewState(rows, viewState) {
   const normalizedSearch = viewState.searchText.trim().toLowerCase();
@@ -2638,9 +2869,9 @@ function formatTimelineDate(row) {
 async function copyText(label, value) {
   try {
     await navigator.clipboard.writeText(value);
-    new import_obsidian5.Notice(`Copied ${label}.`);
+    new import_obsidian6.Notice(`Copied ${label}.`);
   } catch {
-    new import_obsidian5.Notice(`Could not copy ${label}.`);
+    new import_obsidian6.Notice(`Could not copy ${label}.`);
   }
 }
 function renderIssueList(container, row) {
@@ -2656,7 +2887,7 @@ function renderIssueList(container, row) {
   });
 }
 function openRecordMenu(event, row, plugin, file, referencePrefix) {
-  const menu = new import_obsidian5.Menu();
+  const menu = new import_obsidian6.Menu();
   let hasItems = false;
   if (typeof row.metric?.id === "string") {
     hasItems = true;
@@ -2721,6 +2952,7 @@ function renderRecord(container, row, plugin, file, referencePrefix, options) {
   const rowEl = container.createDiv({
     cls: row.status === "valid" ? "metrics-lens-record" : ["metrics-lens-record", `is-${row.status}`]
   });
+  rowEl.dataset.metricsLineNumber = String(row.lineNumber);
   rowEl.tabIndex = -1;
   if (typeof row.metric?.id === "string") {
     rowEl.dataset.metricId = row.metric.id;
@@ -2749,7 +2981,7 @@ function renderRecord(container, row, plugin, file, referencePrefix, options) {
   if (iconId) {
     marker.setAttribute("aria-hidden", "true");
     try {
-      (0, import_obsidian5.setIcon)(marker, iconId);
+      (0, import_obsidian6.setIcon)(marker, iconId);
       if (marker.querySelector("svg")) {
         marker.addClass("has-icon");
         body.addClass("has-icon-marker");
@@ -2789,14 +3021,14 @@ function renderRecord(container, row, plugin, file, referencePrefix, options) {
   menuButton.type = "button";
   menuButton.setAttribute("aria-label", `More actions for ${row.metric?.key ?? "record"}`);
   menuButton.setAttribute("data-tooltip-position", "left");
-  (0, import_obsidian5.setIcon)(menuButton, "more-horizontal");
+  (0, import_obsidian6.setIcon)(menuButton, "more-horizontal");
   menuButton.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
     openRecordMenu(event, row, plugin, file, referencePrefix);
   });
 }
-var MetricsFileView = class extends import_obsidian5.TextFileView {
+var MetricsFileView = class extends import_obsidian6.TextFileView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
@@ -2805,8 +3037,10 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
   allowNoFile = true;
   advancedControlsExpanded = false;
   addRecordActionEl = null;
+  actionsSeparatorEl = null;
   chartActionEl = null;
   clearTargetedRecordTimeout = null;
+  fileActionsActionEl = null;
   pendingControlFocus = null;
   pendingMetricIdFocus = null;
   viewState = createDefaultViewState();
@@ -2866,10 +3100,17 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
     this.render();
   }
   ensureHeaderActions() {
+    if (!this.fileActionsActionEl) {
+      this.fileActionsActionEl = this.addAction("files", "Metrics file actions", () => {
+        const actionEl = this.fileActionsActionEl;
+        const rect = actionEl?.getBoundingClientRect();
+        this.plugin.openMetricsFileActionsMenu(this.file, rect ?? void 0);
+      });
+    }
     if (!this.chartActionEl) {
       this.chartActionEl = this.addAction("chart-line", "Show chart", () => {
         if (!this.file) {
-          new import_obsidian5.Notice("Open a metrics file first.");
+          new import_obsidian6.Notice("Open a metrics file first.");
           return;
         }
         this.viewState.showChart = !this.viewState.showChart;
@@ -2880,22 +3121,33 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
     if (!this.addRecordActionEl) {
       this.addRecordActionEl = this.addAction("plus", "Add record", () => {
         if (!this.file) {
-          new import_obsidian5.Notice("Open a metrics file first.");
+          new import_obsidian6.Notice("Open a metrics file first.");
           return;
         }
         this.plugin.openCreateRecordModal(this.file);
       });
     }
-    if (this.addRecordActionEl?.parentElement && !this.viewActionSeparatorEl) {
+    if (this.addRecordActionEl?.parentElement && this.chartActionEl?.parentElement && !this.viewActionSeparatorEl) {
       const separator = this.addRecordActionEl.parentElement.createDiv({
         cls: "metrics-lens-view-action-separator"
       });
-      this.addRecordActionEl.parentElement.insertBefore(separator, this.addRecordActionEl);
+      this.addRecordActionEl.parentElement.insertBefore(separator, this.chartActionEl);
       this.viewActionSeparatorEl = separator;
+    }
+    if (this.chartActionEl?.parentElement && this.fileActionsActionEl?.parentElement && !this.actionsSeparatorEl) {
+      const separator = this.fileActionsActionEl.parentElement.createDiv({
+        cls: "metrics-lens-view-action-separator"
+      });
+      this.chartActionEl.parentElement.insertBefore(separator, this.fileActionsActionEl);
+      this.actionsSeparatorEl = separator;
     }
     this.syncHeaderActions();
   }
   syncHeaderActions() {
+    if (this.fileActionsActionEl) {
+      this.fileActionsActionEl.setAttribute("aria-label", "Metrics file actions");
+      this.fileActionsActionEl.setAttribute("data-tooltip-position", "bottom");
+    }
     if (this.chartActionEl) {
       this.chartActionEl.toggleClass("is-active", this.viewState.showChart);
       this.chartActionEl.setAttribute(
@@ -2925,7 +3177,11 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
     if (!chartModel) {
       return;
     }
-    renderMetricsChart(container, chartModel);
+    renderMetricsChart(container, chartModel, {
+      onSelect: (selection) => {
+        this.focusChartSelection(selection);
+      }
+    });
   }
   render() {
     this.contentEl.empty();
@@ -3074,6 +3330,9 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
       { label: "This week", value: "this-week" },
       { label: "Past 7 days", value: "past-7-days" },
       { label: "Past 30 days", value: "past-30-days" },
+      { label: "Past 3 months", value: "past-3-months" },
+      { label: "Past 6 months", value: "past-6-months" },
+      { label: "Past 1 year", value: "past-1-year" },
       { label: "This month", value: "this-month" },
       { label: "Custom range", value: "custom" }
     ].forEach((option) => {
@@ -3158,11 +3417,11 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
     sortButton.dataset.metricsControl = "sort";
     sortButton.setAttribute("aria-label", `Sort metrics: ${this.sortOrderLabel(this.viewState.sortOrder)}`);
     sortButton.setAttribute("data-tooltip-position", "top");
-    (0, import_obsidian5.setIcon)(sortButton, "arrow-up-down");
+    (0, import_obsidian6.setIcon)(sortButton, "arrow-up-down");
     sortButton.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      const menu = new import_obsidian5.Menu();
+      const menu = new import_obsidian6.Menu();
       [
         { label: "Newest first", value: "newest" },
         { label: "Oldest first", value: "oldest" },
@@ -3188,7 +3447,7 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
       resetButton.dataset.metricsControl = "reset";
       resetButton.setAttribute("aria-label", "Reset current filters and sorting");
       resetButton.setAttribute("data-tooltip-position", "top");
-      (0, import_obsidian5.setIcon)(resetButton, "rotate-ccw");
+      (0, import_obsidian6.setIcon)(resetButton, "rotate-ccw");
       resetButton.addEventListener("click", () => {
         this.resetCurrentViewState();
         this.render();
@@ -3204,7 +3463,7 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
       showAdvancedControls ? "Hide more filters" : activeAdvancedControls > 0 ? `Show more filters (${activeAdvancedControls} active)` : "Show more filters"
     );
     moreButton.setAttribute("data-tooltip-position", "top");
-    (0, import_obsidian5.setIcon)(moreButton, "sliders-horizontal");
+    (0, import_obsidian6.setIcon)(moreButton, "sliders-horizontal");
     moreButton.toggleClass("is-active", showAdvancedControls || activeAdvancedControls > 0);
     moreButton.addEventListener("click", () => {
       this.pendingControlFocus = { name: "more" };
@@ -3311,17 +3570,43 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
       return;
     }
     this.pendingMetricIdFocus = null;
-    targetEl.addClass("is-targeted");
-    targetEl.scrollIntoView({
+    this.highlightRecordElements([targetEl]);
+  }
+  focusChartSelection(selection) {
+    const targetElements = uniqueLineNumbers2(selection.lineNumbers).map(
+      (lineNumber) => this.contentEl.querySelector(`[data-metrics-line-number="${lineNumber}"]`)
+    ).filter((element) => element !== null);
+    if (targetElements.length === 0) {
+      new import_obsidian6.Notice(`No visible rows matched ${selection.bucketLabel}.`);
+      return;
+    }
+    this.highlightRecordElements(targetElements);
+  }
+  highlightRecordElements(targetElements) {
+    if (targetElements.length === 0) {
+      return;
+    }
+    if (this.clearTargetedRecordTimeout !== null) {
+      window.clearTimeout(this.clearTargetedRecordTimeout);
+      this.clearTargetedRecordTimeout = null;
+    }
+    this.contentEl.querySelectorAll(".metrics-lens-record.is-targeted").forEach((element) => element.removeClass("is-targeted"));
+    targetElements.forEach((element) => {
+      element.addClass("is-targeted");
+    });
+    const firstTarget = targetElements[0];
+    if (!firstTarget) {
+      return;
+    }
+    firstTarget.scrollIntoView({
       block: "center",
       behavior: "smooth"
     });
-    targetEl.focus({ preventScroll: true });
-    if (this.clearTargetedRecordTimeout !== null) {
-      window.clearTimeout(this.clearTargetedRecordTimeout);
-    }
+    firstTarget.focus({ preventScroll: true });
     this.clearTargetedRecordTimeout = window.setTimeout(() => {
-      targetEl.removeClass("is-targeted");
+      targetElements.forEach((element) => {
+        element.removeClass("is-targeted");
+      });
       this.clearTargetedRecordTimeout = null;
     }, 1800);
   }
@@ -3355,7 +3640,7 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
 };
 
 // src/main.ts
-var MetricsPlugin = class extends import_obsidian6.Plugin {
+var MetricsPlugin = class extends import_obsidian7.Plugin {
   settings = DEFAULT_SETTINGS;
   suppressedAutoOpenPaths = /* @__PURE__ */ new Set();
   fileExplorerObserver = null;
@@ -3412,6 +3697,41 @@ var MetricsPlugin = class extends import_obsidian6.Plugin {
       }
     });
     this.addCommand({
+      id: "new-file",
+      name: "New metrics file",
+      callback: () => {
+        this.openCreateMetricsFileModal();
+      }
+    });
+    this.addCommand({
+      id: "rename-current-file",
+      name: "Rename current metrics file",
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file || !this.isMetricsFile(file)) {
+          return false;
+        }
+        if (!checking) {
+          this.openRenameMetricsFileModal(file);
+        }
+        return true;
+      }
+    });
+    this.addCommand({
+      id: "delete-current-file",
+      name: "Delete current metrics file",
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file || !this.isMetricsFile(file)) {
+          return false;
+        }
+        if (!checking) {
+          this.confirmDeleteMetricsFile(file);
+        }
+        return true;
+      }
+    });
+    this.addCommand({
       id: "open-view",
       name: "Open metrics view",
       callback: async () => {
@@ -3459,8 +3779,23 @@ var MetricsPlugin = class extends import_obsidian6.Plugin {
     );
     this.registerEvent(this.app.vault.on("modify", () => this.refreshOpenMetricsViews()));
     this.registerEvent(this.app.vault.on("create", () => this.refreshOpenMetricsViews()));
-    this.registerEvent(this.app.vault.on("delete", () => this.refreshOpenMetricsViews()));
-    this.registerEvent(this.app.vault.on("rename", () => this.refreshOpenMetricsViews()));
+    this.registerEvent(
+      this.app.vault.on("delete", (file) => {
+        this.forgetPersistedViewStateForPath(file.path);
+        void this.resetDeletedMetricsLeaves(file.path);
+        this.refreshOpenMetricsViews();
+      })
+    );
+    this.registerEvent(
+      this.app.vault.on("rename", (file, oldPath) => {
+        if (file instanceof import_obsidian7.TFile) {
+          this.handleMetricsFileRename(file, oldPath);
+        } else if (this.isMetricsPath((0, import_obsidian7.normalizePath)(oldPath))) {
+          this.forgetPersistedViewStateForPath(oldPath);
+        }
+        this.refreshOpenMetricsViews();
+      })
+    );
     this.app.workspace.onLayoutReady(() => {
       const activeFile = this.app.workspace.getActiveFile();
       this.queueAutoOpen(activeFile, this.app.workspace.activeLeaf);
@@ -3535,6 +3870,22 @@ var MetricsPlugin = class extends import_obsidian6.Plugin {
     delete this.settings.persistedViewStateByPath[filePath];
     this.queuePersistedViewStateSave();
   }
+  forgetPersistedViewStateForPath(filePath) {
+    if (!filePath || !(filePath in this.settings.persistedViewStateByPath)) {
+      return;
+    }
+    delete this.settings.persistedViewStateByPath[filePath];
+    this.queuePersistedViewStateSave();
+  }
+  movePersistedViewState(oldPath, newPath) {
+    const persisted = this.settings.persistedViewStateByPath[oldPath];
+    if (!persisted) {
+      return;
+    }
+    this.settings.persistedViewStateByPath[newPath] = persisted;
+    delete this.settings.persistedViewStateByPath[oldPath];
+    this.queuePersistedViewStateSave();
+  }
   queuePersistedViewStateSave() {
     if (this.persistViewStateTimer !== null) {
       window.clearTimeout(this.persistViewStateTimer);
@@ -3580,12 +3931,12 @@ var MetricsPlugin = class extends import_obsidian6.Plugin {
       return result.content;
     });
     if (assigned === 0) {
-      new import_obsidian6.Notice(
+      new import_obsidian7.Notice(
         skipped > 0 ? "No missing ids were assigned. Some rows were skipped because they are invalid." : "No missing ids were found in this metrics file."
       );
       return;
     }
-    new import_obsidian6.Notice(
+    new import_obsidian7.Notice(
       skipped > 0 ? `Assigned ${assigned} ids. Skipped ${skipped} invalid rows.` : `Assigned ${assigned} ids.`
     );
     this.refreshOpenMetricsViews();
@@ -3617,6 +3968,40 @@ var MetricsPlugin = class extends import_obsidian6.Plugin {
     );
     modal.open();
   }
+  openCreateMetricsFileModal(initialValue = "") {
+    const modal = new MetricsFileModal(
+      this.app,
+      {
+        description: `Create a metrics file under ${this.settings.metricsRoot}. You can enter a nested relative path, and ${this.primaryMetricsExtension()} will be added when missing.`,
+        fieldLabel: "Path",
+        initialValue,
+        placeholder: `All${this.primaryMetricsExtension()}`,
+        submitLabel: "Create file",
+        title: "New metrics file"
+      },
+      (value) => {
+        void this.createMetricsFile(value);
+      }
+    );
+    modal.open();
+  }
+  openRenameMetricsFileModal(file) {
+    const modal = new MetricsFileModal(
+      this.app,
+      {
+        description: `Rename this metrics file within ${this.settings.metricsRoot}. You can enter a nested relative path, and ${this.primaryMetricsExtension()} will be added when missing.`,
+        fieldLabel: "Path",
+        initialValue: this.relativeMetricsPath(file.path, { stripExtension: true }),
+        placeholder: logicalMetricsBaseName(file.name, this.settings.supportedExtensions),
+        submitLabel: "Rename file",
+        title: `Rename ${logicalMetricsBaseName(file.name, this.settings.supportedExtensions)}`
+      },
+      (value) => {
+        void this.renameMetricsFile(file, value);
+      }
+    );
+    modal.open();
+  }
   async createRecord(file, recordInput) {
     try {
       let createdId = "";
@@ -3625,7 +4010,7 @@ var MetricsPlugin = class extends import_obsidian6.Plugin {
         createdId = result.record.id;
         return result.content;
       });
-      new import_obsidian6.Notice(`Added metrics record ${createdId}.`);
+      new import_obsidian7.Notice(`Added metrics record ${createdId}.`);
       this.refreshOpenMetricsViews();
     } catch (error) {
       this.handleMutationError(error);
@@ -3637,7 +4022,7 @@ var MetricsPlugin = class extends import_obsidian6.Plugin {
         const result = updateMetricRecordInMetricsData(data, recordId, recordInput);
         return result.content;
       });
-      new import_obsidian6.Notice(`Updated metrics record ${recordId}.`);
+      new import_obsidian7.Notice(`Updated metrics record ${recordId}.`);
       this.refreshOpenMetricsViews();
     } catch (error) {
       this.handleMutationError(error);
@@ -3649,7 +4034,7 @@ var MetricsPlugin = class extends import_obsidian6.Plugin {
         const result = deleteMetricRecordFromMetricsData(data, recordId);
         return result.content;
       });
-      new import_obsidian6.Notice(`Deleted metrics record ${recordId}.`);
+      new import_obsidian7.Notice(`Deleted metrics record ${recordId}.`);
       this.refreshOpenMetricsViews();
     } catch (error) {
       this.handleMutationError(error);
@@ -3661,9 +4046,109 @@ var MetricsPlugin = class extends import_obsidian6.Plugin {
     }
     void this.deleteRecord(file, record.id);
   }
+  openMetricsFileActionsMenu(file, position) {
+    const menu = new import_obsidian7.Menu();
+    menu.addItem((item) => {
+      item.setTitle("New metrics file").setIcon("file-plus").onClick(() => {
+        const initialValue = file && this.isMetricsFile(file) ? this.relativeMetricsFolderPath(file.path) : "";
+        this.openCreateMetricsFileModal(initialValue);
+      });
+    });
+    menu.addSeparator();
+    menu.addItem((item) => {
+      item.setTitle("Rename current file").setIcon("pencil").setDisabled(!file).onClick(() => {
+        if (!file) {
+          return;
+        }
+        this.openRenameMetricsFileModal(file);
+      });
+    });
+    menu.addItem((item) => {
+      item.setTitle("Delete current file").setIcon("trash").setDisabled(!file).setWarning(true).onClick(() => {
+        if (!file) {
+          return;
+        }
+        this.confirmDeleteMetricsFile(file);
+      });
+    });
+    if (position) {
+      menu.showAtPosition({
+        overlap: true,
+        width: position.width,
+        x: position.left,
+        y: position.bottom
+      });
+      return;
+    }
+    menu.showAtPosition({
+      x: window.innerWidth / 2,
+      y: 80
+    });
+  }
+  async createMetricsFile(input) {
+    try {
+      const path = this.resolveMetricsFilePath(input);
+      const existing = this.app.vault.getAbstractFileByPath(path);
+      if (existing) {
+        new import_obsidian7.Notice(`A file already exists at ${path}.`);
+        return;
+      }
+      await this.ensureParentFolder(path);
+      const file = await this.app.vault.create(path, "");
+      new import_obsidian7.Notice(`Created ${file.path}.`);
+      const targetLeaf = this.app.workspace.getLeavesOfType(METRICS_VIEW_TYPE)[0] ?? this.app.workspace.getRightLeaf(false) ?? this.app.workspace.activeLeaf;
+      await this.openMetricsFile(
+        file,
+        targetLeaf
+      );
+      this.refreshOpenMetricsViews();
+    } catch (error) {
+      this.handleMutationError(error);
+    }
+  }
+  async renameMetricsFile(file, input) {
+    try {
+      const nextPath = this.resolveMetricsFilePath(input, {
+        baseFolderPath: file.parent?.path ?? this.settings.metricsRoot
+      });
+      if (nextPath === file.path) {
+        return;
+      }
+      const existing = this.app.vault.getAbstractFileByPath(nextPath);
+      if (existing && existing !== file) {
+        new import_obsidian7.Notice(`A file already exists at ${nextPath}.`);
+        return;
+      }
+      await this.ensureParentFolder(nextPath);
+      const previousPath = file.path;
+      await this.app.fileManager.renameFile(file, nextPath);
+      this.movePersistedViewState(previousPath, nextPath);
+      new import_obsidian7.Notice(`Renamed metrics file to ${nextPath}.`);
+    } catch (error) {
+      this.handleMutationError(error);
+    }
+  }
+  confirmDeleteMetricsFile(file) {
+    if (!window.confirm(`Delete ${file.name}?`)) {
+      return;
+    }
+    void this.deleteMetricsFile(file);
+  }
+  async deleteMetricsFile(file) {
+    try {
+      const path = file.path;
+      await this.app.vault.trash(file, true);
+      this.forgetPersistedViewStateForPath(path);
+      await this.resetDeletedMetricsLeaves(path);
+      new import_obsidian7.Notice(`Deleted ${path}.`);
+      this.refreshOpenMetricsViews();
+    } catch (error) {
+      this.handleMutationError(error);
+    }
+  }
   async openMetricsFile(file, leaf) {
     if (!leaf) {
-      new import_obsidian6.Notice("No active pane is available.");
+      new import_obsidian7.Notice("No active pane is available.");
       return;
     }
     await leaf.setViewState({
@@ -3682,7 +4167,7 @@ var MetricsPlugin = class extends import_obsidian6.Plugin {
   async openMetricReference(value) {
     const metricId = extractMetricIdFromText(value, this.settings.recordReferencePrefix);
     if (!metricId) {
-      new import_obsidian6.Notice("Metric reference must look like `metric:<id>` or a raw ULID.");
+      new import_obsidian7.Notice("Metric reference must look like `metric:<id>` or a raw ULID.");
       return;
     }
     const resolved = await this.resolveMetricReference(metricId);
@@ -3701,14 +4186,14 @@ var MetricsPlugin = class extends import_obsidian6.Plugin {
   }
   handleMutationError(error) {
     if (error instanceof MetricsMutationError) {
-      new import_obsidian6.Notice(error.message);
+      new import_obsidian7.Notice(error.message);
       return;
     }
     if (error instanceof Error) {
-      new import_obsidian6.Notice(error.message);
+      new import_obsidian7.Notice(error.message);
       return;
     }
-    new import_obsidian6.Notice("Metrics mutation failed.");
+    new import_obsidian7.Notice("Metrics mutation failed.");
   }
   metricIdFromEditor(editor) {
     const selection = editor.getSelection();
@@ -3720,7 +4205,7 @@ var MetricsPlugin = class extends import_obsidian6.Plugin {
     return findMetricIdAtOffset(line, cursor.ch, this.settings.recordReferencePrefix);
   }
   selectedMetricReferenceText() {
-    const markdownView = this.app.workspace.getActiveViewOfType(import_obsidian6.MarkdownView);
+    const markdownView = this.app.workspace.getActiveViewOfType(import_obsidian7.MarkdownView);
     if (!markdownView) {
       return "";
     }
@@ -3729,7 +4214,7 @@ var MetricsPlugin = class extends import_obsidian6.Plugin {
   async resolveMetricReference(metricId) {
     const metricsFiles = this.metricsFilesInScope();
     if (metricsFiles.length === 0) {
-      new import_obsidian6.Notice(`No metrics files were found under ${this.settings.metricsRoot}.`);
+      new import_obsidian7.Notice(`No metrics files were found under ${this.settings.metricsRoot}.`);
       return null;
     }
     const matches = [];
@@ -3743,16 +4228,113 @@ var MetricsPlugin = class extends import_obsidian6.Plugin {
       });
     }
     if (matches.length === 0) {
-      new import_obsidian6.Notice(`Metric reference ${metricId} was not found.`);
+      new import_obsidian7.Notice(`Metric reference ${metricId} was not found.`);
       return null;
     }
     if (matches.length > 1) {
-      new import_obsidian6.Notice(
+      new import_obsidian7.Notice(
         `Metric reference ${metricId} matched ${matches.length} records. Resolve duplicate ids before using references.`
       );
       return null;
     }
     return matches[0] ?? null;
+  }
+  handleMetricsFileRename(file, oldPath) {
+    const normalizedOldPath = (0, import_obsidian7.normalizePath)(oldPath);
+    if (this.isMetricsPath(normalizedOldPath)) {
+      if (this.isMetricsFile(file)) {
+        this.movePersistedViewState(normalizedOldPath, file.path);
+      } else {
+        this.forgetPersistedViewStateForPath(normalizedOldPath);
+      }
+    }
+  }
+  primaryMetricsExtension() {
+    return this.settings.supportedExtensions[0] ?? DEFAULT_SETTINGS.supportedExtensions[0] ?? ".metrics.ndjson";
+  }
+  hasSupportedExtension(path) {
+    return this.settings.supportedExtensions.some((extension) => path.endsWith(extension));
+  }
+  isWithinMetricsRoot(path) {
+    const metricsRoot = (0, import_obsidian7.normalizePath)(this.settings.metricsRoot);
+    return path === metricsRoot || path.startsWith(`${metricsRoot}/`);
+  }
+  resolveMetricsFilePath(input, options) {
+    const normalizedInput = (0, import_obsidian7.normalizePath)(input.trim());
+    let path = normalizedInput;
+    if (!this.hasSupportedExtension(path)) {
+      path = `${path}${this.primaryMetricsExtension()}`;
+    }
+    if (!this.isWithinMetricsRoot(path)) {
+      const baseFolder = (0, import_obsidian7.normalizePath)(options?.baseFolderPath ?? this.settings.metricsRoot);
+      path = (0, import_obsidian7.normalizePath)(`${baseFolder}/${path}`);
+    }
+    if (!this.isWithinMetricsRoot(path) || path === (0, import_obsidian7.normalizePath)(this.settings.metricsRoot)) {
+      throw new MetricsMutationError(
+        `Metrics files must stay inside ${this.settings.metricsRoot}.`,
+        "invalid_metrics_path"
+      );
+    }
+    return path;
+  }
+  relativeMetricsPath(path, options) {
+    const metricsRoot = (0, import_obsidian7.normalizePath)(this.settings.metricsRoot);
+    let relativePath = path.startsWith(`${metricsRoot}/`) ? path.slice(metricsRoot.length + 1) : path;
+    if (options?.stripExtension) {
+      const matchingExtension = this.settings.supportedExtensions.find(
+        (extension) => relativePath.endsWith(extension)
+      );
+      if (matchingExtension) {
+        relativePath = relativePath.slice(0, -matchingExtension.length);
+      }
+    }
+    return relativePath;
+  }
+  relativeMetricsFolderPath(path) {
+    const relativePath = this.relativeMetricsPath(path);
+    const separatorIndex = relativePath.lastIndexOf("/");
+    if (separatorIndex === -1) {
+      return "";
+    }
+    return relativePath.slice(0, separatorIndex + 1);
+  }
+  async ensureParentFolder(path) {
+    const parentPath = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+    if (parentPath.length === 0) {
+      return;
+    }
+    await this.ensureFolderPath(parentPath);
+  }
+  async ensureFolderPath(path) {
+    const normalizedPath = (0, import_obsidian7.normalizePath)(path);
+    if (normalizedPath.length === 0) {
+      return;
+    }
+    const existing = this.app.vault.getAbstractFileByPath(normalizedPath);
+    if (existing instanceof import_obsidian7.TFolder) {
+      return;
+    }
+    if (existing instanceof import_obsidian7.TFile) {
+      throw new MetricsMutationError(`${normalizedPath} already exists as a file.`, "path_conflict");
+    }
+    const parentPath = normalizedPath.includes("/") ? normalizedPath.slice(0, normalizedPath.lastIndexOf("/")) : "";
+    if (parentPath.length > 0) {
+      await this.ensureFolderPath(parentPath);
+    }
+    await this.app.vault.createFolder(normalizedPath);
+  }
+  async resetDeletedMetricsLeaves(path) {
+    const leaves = this.app.workspace.getLeavesOfType(METRICS_VIEW_TYPE);
+    for (const leaf of leaves) {
+      const view = leaf.view;
+      if (!(view instanceof MetricsFileView) || view.file?.path !== path) {
+        continue;
+      }
+      await leaf.setViewState({
+        active: leaf === this.app.workspace.activeLeaf,
+        type: METRICS_VIEW_TYPE
+      });
+    }
   }
   suppressAutoOpenForPath(path) {
     this.suppressedAutoOpenPaths.add(path);
@@ -3779,7 +4361,7 @@ var MetricsPlugin = class extends import_obsidian6.Plugin {
   }
   metricsFilesInScope() {
     const root = this.app.vault.getAbstractFileByPath(this.settings.metricsRoot);
-    if (!(root instanceof import_obsidian6.TFolder)) {
+    if (!(root instanceof import_obsidian7.TFolder)) {
       return [];
     }
     return this.collectMetricsFiles(root);
@@ -3787,13 +4369,13 @@ var MetricsPlugin = class extends import_obsidian6.Plugin {
   collectMetricsFiles(folder) {
     const files = [];
     folder.children.forEach((child) => {
-      if (child instanceof import_obsidian6.TFile) {
+      if (child instanceof import_obsidian7.TFile) {
         if (this.isMetricsFile(child)) {
           files.push(child);
         }
         return;
       }
-      if (child instanceof import_obsidian6.TFolder) {
+      if (child instanceof import_obsidian7.TFolder) {
         files.push(...this.collectMetricsFiles(child));
       }
     });

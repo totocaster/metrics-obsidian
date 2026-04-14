@@ -2,10 +2,10 @@
 
 ## Status
 
-- Status: initial chart rendering in progress
+- Status: active and implemented for the current-file metrics view
 - Target phase: current-file charting inside the existing metrics view
-- Implemented so far: per-file `show chart` toggle in the title bar, chart placement above filters, native SVG rendering, stacked day bars, hover crosshair/tooltip, interactive legends, and adaptive axis formatting
-- Not implemented yet: chart polish and grouped-section-specific charts
+- Implemented so far: per-file `show chart` toggle in the title bar, chart placement above filters, native SVG rendering, stacked day bars, hover crosshair/tooltip, interactive legends, adaptive axis formatting, and chart-to-timeline row focus
+- Not implemented yet: grouped-section-specific charts and deeper drill-down modes
 
 ## Goals
 
@@ -49,6 +49,8 @@ records -> filter/search/status/date -> sort -> group -> render
   - validation status filter
   - time range
   - grouping
+- Clicking a chart bucket focuses the matching visible timeline rows below.
+- Chart interaction is a lens over already-visible rows; it does not mutate files.
 
 ### Sorting rule
 
@@ -135,14 +137,14 @@ This is preferred over dual axes in v1 because it is clearer and simpler.
 - X-axis uses local day buckets.
 - Bucket key is `YYYY-MM-DD`.
 - Day headings in the timeline and x-axis in the chart must describe the same day buckets.
-- Multiple rows for the same metric on the same day are summed into one daily value.
+- Multiple rows on the same day contribute to one daily total.
 - Group-by-day charts render as stacked bars.
-- Each stacked segment represents one metric key's summed value for that day.
+- Each stacked segment represents one visible record inside that day stack, so repeated entries remain visible.
 
 Reason:
 - daily grouping should summarize the day, not just pick one row
 - stacked bars make the daily total visually obvious
-- repeated rows within a day remain visible as a meaningful aggregate
+- repeated rows within a day remain visible inside the stack instead of collapsing into one solid block
 
 ### Group by metric
 
@@ -252,6 +254,7 @@ Recommended files:
 2. Add compact legends only when needed.
 3. Tune series colors against light and dark themes.
 4. Decide whether grouped sections should each own their own chart in future.
+5. Decide whether chart clicks should stay as row-focus only or gain temporary bucket filters.
 
 ## Testing plan
 
@@ -259,7 +262,8 @@ Recommended files:
 
 - chart kind heuristic
 - day bucketing
-- latest-per-bucket reducer
+- temporal latest-per-bucket reducer
+- day stack segment preservation
 - multi-unit split into multiple panels
 - categorical ordering
 - temporal chronological ordering
@@ -275,6 +279,8 @@ Recommended files:
 - no rows after filtering
 - one visible row
 - invalid timestamps
+- chart bucket click focuses the matching rows
+- legend isolate or mute changes which rows a chart click targets
 
 ## Recommended v1 decisions
 
@@ -282,7 +288,7 @@ Recommended files:
 - chart type selection: auto only
 - temporal charts: line by default
 - categorical charts: bar by default
-- per-day reducer: sum visible records within the same day and metric
+- per-day reducer: total visible records per day, rendered as stacked segments
 - multi-unit handling: split into separate chart panels
 - persistence: per file, same as existing view controls
 
@@ -291,4 +297,4 @@ Recommended files:
 1. Whether chart visibility should default to off for all files, or auto-enable after first use.
 2. Whether the chart should render before or after grouped day headings when `group by day` is active.
 3. Whether grouped-by-source bars should stack or sit side by side.
-4. Whether v1 should expose a future reducer menu, or keep `latest` fixed until a real need appears.
+4. Whether chart clicks should eventually offer a temporary filter mode in addition to row focus.

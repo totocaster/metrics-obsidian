@@ -6,11 +6,11 @@
 - Contract status: locked for the current file-first metrics phase
 - Scaffold status: complete in this repository
 - Vault dev status: linked into the live `totocaster` vault for real-time testing
-- Scope status: contract, scaffold, and current-file metrics lens are implemented
-- Current implementation status: file-backed metrics timeline view, record parsing, validation, missing-id migration, current-file CRUD, metric reference resolution, per-file filtering/sorting persistence, and grouping by day, metric, and source are working
+- Scope status: contract, scaffold, file lifecycle, current-file metrics lens, and current-file charting are implemented
+- Current implementation status: file-backed metrics timeline view, record parsing, validation, missing-id migration, current-file CRUD, metrics file create/rename/delete, metric reference resolution, per-file filtering/sorting persistence, grouping by day, metric, and source, and interactive charts are working
 - File browser status: `*.metrics.ndjson` files are routed into the plugin view and sidebar labels are normalized to logical metric dataset names
-- UI status: compact timeline layout, per-file persisted view controls, grouping, row action menu, and optional metric icons are implemented
-- Next implementation phase: file management and cross-file navigation
+- UI status: compact timeline layout, per-file persisted view controls, grouping, row action menu, title-bar file actions, optional metric icons, and chart-to-timeline selection are implemented
+- Next implementation phase: cross-file navigation and file-level polish
 
 ## Product
 
@@ -22,14 +22,13 @@ The plugin is a metrics-only tool. It is not a Hypercontext client, does not own
 
 1. Contract
 2. Scaffold
-3. Lens over `*.metrics.ndjson` files with read, validation, and current-file CRUD
+3. Lens over `*.metrics.ndjson` files with read, validation, current-file CRUD, file lifecycle actions, and current-file charts
 
 ## Out of scope for this phase
 
 - ingestion and import pipelines
 - cache layers and hidden databases
-- charts and visualizations
-- advanced filters and query language
+- advanced query language
 - saved views and dashboard blocks
 - note and document features beyond plain metric references
 
@@ -188,7 +187,7 @@ The display name omits "Obsidian" to stay aligned with common community plugin n
 - The current file view supports local filters for key, source, status, text, and date range
 - Filter, search, sort, time range, and grouping state persist per metrics file until the user clicks `Reset`
 - The primary toolbar keeps time range, metrics, search, and sort visible, with advanced filters under `More`
-- The current file view supports preset time ranges including today, this week, past 7 days, past 30 days, this month, and custom range
+- The current file view supports preset time ranges including today, this week, past 7 days, past 30 days, past 3 months, past 6 months, past 1 year, this month, and custom range
 - The current file view supports sort modes for newest-first, oldest-first, and value ordering
 - The current file view can group records by day, metric, or source
 - Day groups render as linked `h2` headings titled `YYYY-MM-DD` and open the matching daily note
@@ -196,7 +195,10 @@ The display name omits "Obsidian" to stay aligned with common community plugin n
 - Record actions are available from a minimal `...` menu for copy, edit, and delete operations
 - The plugin can now resolve `metric:<id>` or raw ULIDs from command input or editor text and open the owning file
 - Metric reference resolution focuses and highlights the matching record in the metrics view
-- The current phase is substantially complete; the next meaningful milestone is file management and cross-file navigation
+- Metrics files can now be created, renamed, and deleted from commands or the metrics view title bar
+- The current file view can render interactive charts above the filters using the same visible rows as the timeline
+- Chart buckets can now focus the matching visible timeline rows below
+- The current phase is substantially complete; the next meaningful milestone is cross-file navigation and file-level polish
 
 ## Viewing plan
 
@@ -231,12 +233,14 @@ The display name omits "Obsidian" to stay aligned with common community plugin n
 
 ## Recommended next work
 
-1. Add metrics file management.
-   Create new metrics files and support rename/delete from the plugin. The record lens is working; file lifecycle is the next missing layer.
-2. Refine the filter/sort/group toolbar.
-   Keep the controls minimal and local to the current view, but improve density and discoverability if needed.
-3. Add cross-file record navigation.
+1. Add cross-file record navigation.
    Provide a search/open flow by `id`, `origin_id`, `key`, or source across the metrics root without introducing a hidden database.
+2. Refine file-level polish.
+   Add small confirmations, rename ergonomics, and smarter defaults around new-file placement if they prove necessary.
+3. Refine the filter/sort/group toolbar.
+   Keep the controls minimal and local to the current view, but improve density and discoverability if needed.
+4. Consider chart-to-timeline depth.
+   If needed, add stronger chart drill-down modes such as temporary bucket filters or chart-driven group focus without changing the file contract.
 
 ## Open questions
 

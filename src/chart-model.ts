@@ -6,6 +6,7 @@ export type MetricsChartAxisKind = "category" | "time";
 
 export interface MetricsChartSeriesPoint {
   bucketKey: string;
+  lineNumbers: number[];
   precision: number;
   timestamp: number | null;
   value: number;
@@ -21,6 +22,7 @@ export interface MetricsChartStackSegment {
   bucketKey: string;
   key: string;
   label: string;
+  lineNumbers: number[];
   precision: number;
   timestamp: number | null;
   value: number;
@@ -29,6 +31,7 @@ export interface MetricsChartStackSegment {
 export interface MetricsChartBucket {
   key: string;
   label: string;
+  lineNumbers: number[];
   timestamp: number | null;
 }
 
@@ -94,6 +97,10 @@ function startOfDayTimestamp(day: string): number | null {
 
 function uniqueStrings(values: string[]): string[] {
   return Array.from(new Set(values));
+}
+
+function appendUniqueLineNumber(lineNumbers: number[], lineNumber: number): number[] {
+  return lineNumbers.includes(lineNumber) ? lineNumbers : [...lineNumbers, lineNumber];
 }
 
 function clampPrecision(value: number): number {
@@ -238,6 +245,7 @@ function buildDailyPanel(
       .filter((value): value is string => typeof value === "string" && value.length > 0),
   );
 
+  const bucketLineNumbers = new Map<string, number[]>();
   const bucketTimestamps = new Map<string, number | null>();
   const stackSegments = new Map<string, MetricsChartStackSegment[]>();
 
@@ -259,12 +267,17 @@ function buildDailyPanel(
     }
 
     bucketTimestamps.set(bucketKey, bucketTimestamp);
+    bucketLineNumbers.set(
+      bucketKey,
+      appendUniqueLineNumber(bucketLineNumbers.get(bucketKey) ?? [], row.lineNumber),
+    );
 
     const segments = stackSegments.get(bucketKey) ?? [];
     segments.push({
       bucketKey,
       key,
       label: key,
+      lineNumbers: [row.lineNumber],
       precision: rawValuePrecision(row),
       timestamp: rowTimestamp(row) ?? bucketTimestamp,
       value,
@@ -277,6 +290,7 @@ function buildDailyPanel(
     .map(([key, timestamp]) => ({
       key,
       label: key,
+      lineNumbers: bucketLineNumbers.get(key) ?? [],
       timestamp,
     }));
 
@@ -332,6 +346,7 @@ function buildTemporalPanel(
       .filter((value): value is string => typeof value === "string" && value.length > 0),
   );
 
+  const bucketLineNumbers = new Map<string, number[]>();
   const bucketTimestamps = new Map<string, number | null>();
   const seriesPointMaps = new Map<string, Map<string, MetricsChartSeriesPoint>>();
 
@@ -354,18 +369,25 @@ function buildTemporalPanel(
     }
 
     bucketTimestamps.set(bucketKey, bucketTimestamp);
+    bucketLineNumbers.set(
+      bucketKey,
+      appendUniqueLineNumber(bucketLineNumbers.get(bucketKey) ?? [], row.lineNumber),
+    );
 
     const pointMap = seriesPointMaps.get(key) ?? new Map<string, MetricsChartSeriesPoint>();
     const existing = pointMap.get(bucketKey);
     if (!existing || (timestamp ?? bucketTimestamp) > (existing.timestamp ?? Number.NEGATIVE_INFINITY)) {
       pointMap.set(bucketKey, {
         bucketKey,
+        lineNumbers: appendUniqueLineNumber(existing?.lineNumbers ?? [], row.lineNumber),
         precision: rawValuePrecision(row),
         timestamp: bucketTimestamp,
         value,
       });
-      seriesPointMaps.set(key, pointMap);
+    } else {
+      existing.lineNumbers = appendUniqueLineNumber(existing.lineNumbers, row.lineNumber);
     }
+    seriesPointMaps.set(key, pointMap);
   });
 
   const buckets = Array.from(bucketTimestamps.entries())
@@ -373,6 +395,7 @@ function buildTemporalPanel(
     .map(([key, timestamp]) => ({
       key,
       label: key,
+      lineNumbers: bucketLineNumbers.get(key) ?? [],
       timestamp,
     }));
 
@@ -423,6 +446,7 @@ function buildSourcePanel(
   unitLabel: string | null,
 ): MetricsChartPanel | null {
   const valuePrecision = maxPrecisionForRows(rows);
+  const bucketLineNumbers = new Map<string, number[]>();
   const bucketKeys = uniqueStrings(
     rows.map((row) => {
       const source = row.metric?.source;
@@ -448,21 +472,30 @@ function buildSourcePanel(
     const source = typeof row.metric?.source === "string" && row.metric.source.length > 0
       ? row.metric.source
       : "No source";
+    bucketLineNumbers.set(
+      source,
+      appendUniqueLineNumber(bucketLineNumbers.get(source) ?? [], row.lineNumber),
+    );
     const pointMap = pointMaps.get(key) ?? new Map<string, MetricsChartSeriesPoint>();
-    if (!pointMap.has(source)) {
+    const existing = pointMap.get(source);
+    if (!existing) {
       pointMap.set(source, {
         bucketKey: source,
+        lineNumbers: [row.lineNumber],
         precision: rawValuePrecision(row),
         timestamp: rowTimestamp(row),
         value,
       });
-      pointMaps.set(key, pointMap);
+    } else {
+      existing.lineNumbers = appendUniqueLineNumber(existing.lineNumbers, row.lineNumber);
     }
+    pointMaps.set(key, pointMap);
   });
 
   const buckets = bucketKeys.map((key) => ({
     key,
     label: key,
+    lineNumbers: bucketLineNumbers.get(key) ?? [],
     timestamp: null,
   }));
 
@@ -514,12 +547,15 @@ function buildKeyPanel(
       const key = row.metric?.key;
       return typeof key === "string" && key.length > 0 ? key : "No metric";
     }),
-  ).map((key) => ({
+  );
+
+  const bucketLineNumbers = new Map<string, number[]>();
+  const bucketDefs = buckets.map((key) => ({
     key,
     label: key,
+    lineNumbers: bucketLineNumbers.get(key) ?? [],
     timestamp: null,
   }));
-
   const pointMap = new Map<string, MetricsChartSeriesPoint>();
   rows.forEach((row) => {
     const key = row.metric?.key;
@@ -528,13 +564,25 @@ function buildKeyPanel(
       return;
     }
 
+    bucketLineNumbers.set(
+      key,
+      appendUniqueLineNumber(bucketLineNumbers.get(key) ?? [], row.lineNumber),
+    );
+
     if (!pointMap.has(key)) {
       pointMap.set(key, {
         bucketKey: key,
+        lineNumbers: [row.lineNumber],
         precision: rawValuePrecision(row),
         timestamp: rowTimestamp(row),
         value,
       });
+      return;
+    }
+
+    const existing = pointMap.get(key);
+    if (existing) {
+      existing.lineNumbers = appendUniqueLineNumber(existing.lineNumbers, row.lineNumber);
     }
   });
 
@@ -542,7 +590,7 @@ function buildKeyPanel(
     {
       key: "value",
       label: unitLabel ?? "Value",
-      points: buckets
+      points: bucketDefs
         .map((bucket) => pointMap.get(bucket.key))
         .filter((point): point is MetricsChartSeriesPoint => point !== undefined),
     },
@@ -556,7 +604,10 @@ function buildKeyPanel(
   return {
     axisKind: "category",
     axisPrecision: resolveAxisPrecision(valueRange.minValue, valueRange.maxValue, valuePrecision),
-    buckets,
+    buckets: bucketDefs.map((bucket) => ({
+      ...bucket,
+      lineNumbers: bucketLineNumbers.get(bucket.key) ?? [],
+    })),
     kind: "bar",
     maxValue: valueRange.maxValue,
     minValue: valueRange.minValue,

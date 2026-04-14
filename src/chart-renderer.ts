@@ -6,6 +6,7 @@ import type {
   MetricsChartSeriesPoint,
   MetricsChartStackSegment,
 } from "./chart-model";
+import { formatMetricDisplayValue } from "./metric-value-format";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const CHART_WIDTH = 640;
@@ -23,6 +24,7 @@ interface PanelInteractionState {
 interface HoverEntry {
   colorClass: string;
   label: string;
+  lineNumbers: number[];
   precision: number;
   value: number;
 }
@@ -30,6 +32,7 @@ interface HoverEntry {
 interface HoverTarget {
   bucket: MetricsChartBucket;
   entries: HoverEntry[];
+  lineNumbers: number[];
   x: number;
   xEnd: number;
   xStart: number;
@@ -46,6 +49,16 @@ interface XAxisLabelLayout {
   rotate: boolean;
 }
 
+export interface MetricsChartSelection {
+  bucketKey: string;
+  bucketLabel: string;
+  lineNumbers: number[];
+}
+
+export interface RenderMetricsChartOptions {
+  onSelect?: (selection: MetricsChartSelection) => void;
+}
+
 function createSvgEl<K extends keyof SVGElementTagNameMap>(
   tagName: K,
   attributes?: Record<string, number | string>,
@@ -59,10 +72,14 @@ function createSvgEl<K extends keyof SVGElementTagNameMap>(
   return element;
 }
 
-function formatChartValue(value: number, decimals: number): string {
-  return value.toLocaleString(undefined, {
-    maximumFractionDigits: decimals,
-    minimumFractionDigits: decimals,
+function formatChartValue(
+  value: number,
+  decimals: number,
+  unit: string | null | undefined,
+): string {
+  return formatMetricDisplayValue(value, unit, {
+    decimals,
+    includeUnit: false,
   });
 }
 
@@ -105,6 +122,10 @@ function formatSegmentTime(timestamp: number | null): string | null {
     hour: "2-digit",
     minute: "2-digit",
   }).format(timestamp);
+}
+
+function uniqueLineNumbers(lineNumbers: number[]): number[] {
+  return Array.from(new Set(lineNumbers));
 }
 
 function colorClass(index: number): string {
@@ -332,7 +353,7 @@ function appendYAxis(
       x: PLOT_LEFT - 8,
       y: y + 4,
     });
-    label.textContent = formatChartValue(value, panel.axisPrecision);
+    label.textContent = formatChartValue(value, panel.axisPrecision, panel.unitLabel);
     svg.appendChild(label);
   });
 
@@ -420,6 +441,7 @@ function lineHoverTargets(
           return {
             colorClass: colorClasses.get(series.key) ?? colorClass(0),
             label: series.label,
+            lineNumbers: point.lineNumbers,
             precision: point.precision,
             value: point.value,
           };
@@ -436,6 +458,7 @@ function lineHoverTargets(
       return {
         bucket,
         entries,
+        lineNumbers: uniqueLineNumbers(entries.flatMap((entry) => entry.lineNumbers)),
         x,
         xEnd,
         xStart,
@@ -474,10 +497,12 @@ function barHoverTargets(
             return {
               colorClass: colorClasses.get(segment.key) ?? colorClass(0),
               label: timeLabel ? `${segment.label} ${timeLabel}` : segment.label,
+              lineNumbers: segment.lineNumbers,
               precision: segment.precision,
               value: segment.value,
             };
           }),
+          lineNumbers: uniqueLineNumbers(segments.flatMap((segment) => segment.lineNumbers)),
           x,
           xEnd,
           xStart,
@@ -495,6 +520,7 @@ function barHoverTargets(
           return {
             colorClass: colorClasses.get(series.key) ?? colorClass(0),
             label: series.label,
+            lineNumbers: point.lineNumbers,
             precision: point.precision,
             value: point.value,
           };
@@ -508,6 +534,7 @@ function barHoverTargets(
       return {
         bucket,
         entries,
+        lineNumbers: uniqueLineNumbers(entries.flatMap((entry) => entry.lineNumbers)),
         x,
         xEnd,
         xStart,
@@ -544,7 +571,7 @@ function renderTooltip(
     });
     row.createSpan({
       cls: "metrics-lens-chart-tooltip-value",
-      text: formatChartValue(entry.value, entry.precision),
+      text: formatChartValue(entry.value, entry.precision, panel.unitLabel),
     });
   });
 }
@@ -554,6 +581,7 @@ function attachHoverTargets(
   svg: SVGSVGElement,
   panel: MetricsChartPanel,
   targets: HoverTarget[],
+  onSelect?: (selection: MetricsChartSelection) => void,
 ): void {
   if (targets.length === 0) {
     return;
@@ -603,14 +631,44 @@ function attachHoverTargets(
       x: target.xStart,
       y: PLOT_TOP,
     });
+    region.setAttribute("aria-label", `Focus ${formatBucketHeading(target.bucket, panel.axisKind)} in timeline`);
+    region.setAttribute("role", "button");
+    region.setAttribute("tabindex", "0");
     region.addEventListener("mouseenter", () => {
       showTarget(target);
     });
     region.addEventListener("mousemove", () => {
       showTarget(target);
     });
+    region.addEventListener("focus", () => {
+      showTarget(target);
+    });
     region.addEventListener("mouseleave", () => {
       hideTarget();
+    });
+    region.addEventListener("blur", () => {
+      hideTarget();
+    });
+    region.addEventListener("click", () => {
+      onSelect?.({
+        bucketKey: target.bucket.key,
+        bucketLabel: formatBucketHeading(target.bucket, panel.axisKind),
+        lineNumbers:
+          target.lineNumbers.length > 0 ? target.lineNumbers : uniqueLineNumbers(target.bucket.lineNumbers),
+      });
+    });
+    region.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") {
+        return;
+      }
+
+      event.preventDefault();
+      onSelect?.({
+        bucketKey: target.bucket.key,
+        bucketLabel: formatBucketHeading(target.bucket, panel.axisKind),
+        lineNumbers:
+          target.lineNumbers.length > 0 ? target.lineNumbers : uniqueLineNumbers(target.bucket.lineNumbers),
+      });
     });
     overlay.appendChild(region);
   });
@@ -621,7 +679,12 @@ function attachHoverTargets(
   };
 }
 
-function renderLineChart(svg: SVGSVGElement, panel: MetricsChartPanel, panelWidth: number): void {
+function renderLineChart(
+  svg: SVGSVGElement,
+  panel: MetricsChartPanel,
+  panelWidth: number,
+  onSelect?: (selection: MetricsChartSelection) => void,
+): void {
   const { plotWidth, yForValue } = appendYAxis(svg, panel);
   const timestamps = panel.buckets
     .map((bucket) => bucket.timestamp)
@@ -675,10 +738,15 @@ function renderLineChart(svg: SVGSVGElement, panel: MetricsChartPanel, panelWidt
   const layout = xAxisLayout(panel, panelWidth, (bucket) => xForTimestamp(bucket.timestamp!));
   appendXAxisLabels(svg, layout, panel.axisKind);
   const targets = lineHoverTargets(panel, xForTimestamp, visibleKeys, colorClasses);
-  attachHoverTargets(svg.parentElement as HTMLElement, svg, panel, targets);
+  attachHoverTargets(svg.parentElement as HTMLElement, svg, panel, targets, onSelect);
 }
 
-function renderBarChart(svg: SVGSVGElement, panel: MetricsChartPanel, panelWidth: number): void {
+function renderBarChart(
+  svg: SVGSVGElement,
+  panel: MetricsChartPanel,
+  panelWidth: number,
+  onSelect?: (selection: MetricsChartSelection) => void,
+): void {
   const { baselineValue, plotWidth, zeroY, yForValue } = appendYAxis(svg, panel);
   const seriesCount = Math.max(panel.series.length, 1);
   const bucketWidth = plotWidth / Math.max(panel.buckets.length, 1);
@@ -745,7 +813,7 @@ function renderBarChart(svg: SVGSVGElement, panel: MetricsChartPanel, panelWidth
   const layout = xAxisLayout(panel, panelWidth, (_bucket, index) => PLOT_LEFT + index * bucketWidth + bucketWidth / 2);
   appendXAxisLabels(svg, layout, panel.axisKind);
   const targets = barHoverTargets(panel, bucketWidth, visibleKeys, colorClasses);
-  attachHoverTargets(svg.parentElement as HTMLElement, svg, panel, targets);
+  attachHoverTargets(svg.parentElement as HTMLElement, svg, panel, targets, onSelect);
 }
 
 function renderLegend(
@@ -849,7 +917,12 @@ function chartPanelTitle(panel: MetricsChartPanel): string {
   return seriesLabels.join(", ");
 }
 
-function renderPanel(container: HTMLElement, panel: MetricsChartPanel, model: MetricsChartModel): void {
+function renderPanel(
+  container: HTMLElement,
+  panel: MetricsChartPanel,
+  model: MetricsChartModel,
+  options?: RenderMetricsChartOptions,
+): void {
   const panelEl = container.createDiv({ cls: "metrics-lens-chart-panel" });
   if (model.panelCount > 1) {
     panelEl.createEl("p", {
@@ -883,19 +956,23 @@ function renderPanel(container: HTMLElement, panel: MetricsChartPanel, model: Me
 
     const panelWidth = panelEl.getBoundingClientRect().width || CHART_WIDTH;
     if (current.kind === "line") {
-      renderLineChart(svg, current, panelWidth);
+      renderLineChart(svg, current, panelWidth, options?.onSelect);
     } else {
-      renderBarChart(svg, current, panelWidth);
+      renderBarChart(svg, current, panelWidth, options?.onSelect);
     }
   };
 
   renderCurrentPanel();
 }
 
-export function renderMetricsChart(container: HTMLElement, model: MetricsChartModel): void {
+export function renderMetricsChart(
+  container: HTMLElement,
+  model: MetricsChartModel,
+  options?: RenderMetricsChartOptions,
+): void {
   const chartSection = container.createDiv({ cls: ["metrics-lens-section", "metrics-lens-chart"] });
   const panels = chartSection.createDiv({ cls: "metrics-lens-chart-panels" });
   model.panels.forEach((panel) => {
-    renderPanel(panels, panel, model);
+    renderPanel(panels, panel, model, options);
   });
 }
