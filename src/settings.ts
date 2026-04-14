@@ -1,21 +1,27 @@
 import { App, PluginSettingTab, Setting, normalizePath } from "obsidian";
 
 import type MetricsPlugin from "./main";
+import {
+  normalizePersistedMetricsViewState,
+  type PersistedMetricsViewState,
+} from "./view-state";
 
 export interface MetricsPluginSettings {
-  metricsRoot: string;
-  supportedExtensions: string[];
   defaultWriteFile: string;
+  metricsRoot: string;
+  persistedViewStateByPath: Record<string, PersistedMetricsViewState>;
   recordReferencePrefix: string;
   showMetricIcons: boolean;
+  supportedExtensions: string[];
 }
 
 export const DEFAULT_SETTINGS: MetricsPluginSettings = {
-  metricsRoot: "Metrics",
-  supportedExtensions: [".metrics.ndjson"],
   defaultWriteFile: "Metrics/All.metrics.ndjson",
+  metricsRoot: "Metrics",
+  persistedViewStateByPath: {},
   recordReferencePrefix: "metric:",
   showMetricIcons: true,
+  supportedExtensions: [".metrics.ndjson"],
 };
 
 export function normalizeMetricsSettings(
@@ -24,20 +30,27 @@ export function normalizeMetricsSettings(
   const supportedExtensions = settings.supportedExtensions?.length
     ? settings.supportedExtensions
     : DEFAULT_SETTINGS.supportedExtensions;
+  const persistedViewStateByPath = Object.fromEntries(
+    Object.entries(settings.persistedViewStateByPath ?? {}).map(([path, value]) => [
+      normalizePath(path),
+      normalizePersistedMetricsViewState(value),
+    ]),
+  );
 
-    return {
-      metricsRoot: normalizePath(settings.metricsRoot ?? DEFAULT_SETTINGS.metricsRoot),
-      supportedExtensions: Array.from(
-        new Set(
-          supportedExtensions
+  return {
+    defaultWriteFile: normalizePath(settings.defaultWriteFile ?? DEFAULT_SETTINGS.defaultWriteFile),
+    metricsRoot: normalizePath(settings.metricsRoot ?? DEFAULT_SETTINGS.metricsRoot),
+    persistedViewStateByPath,
+    recordReferencePrefix:
+      settings.recordReferencePrefix?.trim() || DEFAULT_SETTINGS.recordReferencePrefix,
+    showMetricIcons: settings.showMetricIcons ?? DEFAULT_SETTINGS.showMetricIcons,
+    supportedExtensions: Array.from(
+      new Set(
+        supportedExtensions
           .map((value) => value.trim())
           .filter((value) => value.length > 0),
       ),
     ),
-    defaultWriteFile: normalizePath(settings.defaultWriteFile ?? DEFAULT_SETTINGS.defaultWriteFile),
-    recordReferencePrefix:
-      settings.recordReferencePrefix?.trim() || DEFAULT_SETTINGS.recordReferencePrefix,
-    showMetricIcons: settings.showMetricIcons ?? DEFAULT_SETTINGS.showMetricIcons,
   };
 }
 

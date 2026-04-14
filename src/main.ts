@@ -18,6 +18,12 @@ import {
 } from "./metrics-file-mutation";
 import { DEFAULT_SETTINGS, MetricsPluginSettings, MetricsSettingTab, normalizeMetricsSettings } from "./settings";
 import { logicalMetricsBaseName, METRICS_VIEW_TYPE, MetricsFileView } from "./view";
+import {
+  createDefaultViewState,
+  normalizeMetricsViewState,
+  type MetricsViewState,
+  type PersistedMetricsViewState,
+} from "./view-state";
 
 interface ResolvedMetricReference {
   file: TFile;
@@ -29,6 +35,7 @@ export default class MetricsPlugin extends Plugin {
   private readonly suppressedAutoOpenPaths = new Set<string>();
   private fileExplorerObserver: MutationObserver | null = null;
   private fileExplorerSyncQueued = false;
+  private persistViewStateTimer: number | null = null;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -161,6 +168,12 @@ export default class MetricsPlugin extends Plugin {
   }
 
   async onunload(): Promise<void> {
+    if (this.persistViewStateTimer !== null) {
+      window.clearTimeout(this.persistViewStateTimer);
+      this.persistViewStateTimer = null;
+      await this.saveSettings();
+    }
+
     this.fileExplorerObserver?.disconnect();
     this.fileExplorerObserver = null;
     this.restoreFileExplorerLabels();
@@ -188,6 +201,65 @@ export default class MetricsPlugin extends Plugin {
   async saveSettings(): Promise<void> {
     this.settings = normalizeMetricsSettings(this.settings);
     await this.saveData(this.settings);
+  }
+
+  getPersistedViewState(filePath: string | null): PersistedMetricsViewState {
+    if (!filePath) {
+      return {
+        advancedControlsExpanded: false,
+        viewState: createDefaultViewState(),
+      };
+    }
+
+    const persistedViewState = this.settings.persistedViewStateByPath[filePath];
+    if (!persistedViewState) {
+      return {
+        advancedControlsExpanded: false,
+        viewState: createDefaultViewState(),
+      };
+    }
+
+    const { advancedControlsExpanded, viewState } = persistedViewState;
+    return {
+      advancedControlsExpanded,
+      viewState: normalizeMetricsViewState(viewState),
+    };
+  }
+
+  persistViewState(
+    filePath: string | null,
+    viewState: MetricsViewState,
+    advancedControlsExpanded: boolean,
+  ): void {
+    if (!filePath) {
+      return;
+    }
+
+    this.settings.persistedViewStateByPath[filePath] = {
+      advancedControlsExpanded,
+      viewState: normalizeMetricsViewState(viewState),
+    };
+    this.queuePersistedViewStateSave();
+  }
+
+  resetPersistedViewState(filePath: string | null): void {
+    if (!filePath) {
+      return;
+    }
+
+    delete this.settings.persistedViewStateByPath[filePath];
+    this.queuePersistedViewStateSave();
+  }
+
+  private queuePersistedViewStateSave(): void {
+    if (this.persistViewStateTimer !== null) {
+      window.clearTimeout(this.persistViewStateTimer);
+    }
+
+    this.persistViewStateTimer = window.setTimeout(() => {
+      this.persistViewStateTimer = null;
+      void this.saveSettings();
+    }, 200);
   }
 
   async activateView(): Promise<void> {

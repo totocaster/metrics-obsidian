@@ -7,10 +7,10 @@
 - Scaffold status: complete in this repository
 - Vault dev status: linked into the live `totocaster` vault for real-time testing
 - Scope status: contract, scaffold, and current-file metrics lens are implemented
-- Current implementation status: file-backed metrics timeline view, record parsing, validation, missing-id migration, current-file CRUD, metric reference resolution, current-view filtering/sorting, and day grouping are working
+- Current implementation status: file-backed metrics timeline view, record parsing, validation, missing-id migration, current-file CRUD, metric reference resolution, per-file filtering/sorting persistence, and grouping by day, metric, and source are working
 - File browser status: `*.metrics.ndjson` files are routed into the plugin view and sidebar labels are normalized to logical metric dataset names
-- UI status: compact timeline layout, current-view filters, sorting, day grouping, row action menu, and optional metric icons are implemented
-- Next implementation phase: file management and broader grouping for viewing
+- UI status: compact timeline layout, per-file persisted view controls, grouping, row action menu, and optional metric icons are implemented
+- Next implementation phase: file management and cross-file navigation
 
 ## Product
 
@@ -186,15 +186,17 @@ The display name omits "Obsidian" to stay aligned with common community plugin n
 - The current file view is rendered as a compact timeline with minimal default Obsidian styling
 - Records are sorted newest-first by default using `ts`
 - The current file view supports local filters for key, source, status, text, and date range
+- Filter, search, sort, time range, and grouping state persist per metrics file until the user clicks `Reset`
 - The primary toolbar keeps time range, metrics, search, and sort visible, with advanced filters under `More`
 - The current file view supports preset time ranges including today, this week, past 7 days, past 30 days, this month, and custom range
 - The current file view supports sort modes for newest-first, oldest-first, and value ordering
-- The current file view can group records by day using `h2` headings titled as `[[YYYY-MM-DD]]`
+- The current file view can group records by day, metric, or source
+- Day groups render as linked `h2` headings titled `YYYY-MM-DD` and open the matching daily note
 - Metric icons can be shown in timeline markers and are enabled by default when the icon exists in Obsidian
 - Record actions are available from a minimal `...` menu for copy, edit, and delete operations
 - The plugin can now resolve `metric:<id>` or raw ULIDs from command input or editor text and open the owning file
 - Metric reference resolution focuses and highlights the matching record in the metrics view
-- The current phase is substantially complete; the next meaningful milestone is grouping and file-management workflows
+- The current phase is substantially complete; the next meaningful milestone is file management and cross-file navigation
 
 ## Viewing plan
 
@@ -203,7 +205,7 @@ The display name omits "Obsidian" to stay aligned with common community plugin n
 1. Implemented.
    The current file view now supports metric, source, validation status, free-text search, and time-based filtering.
 2. Keep filters local to the open view.
-   Filters change presentation only and do not mutate files.
+   Filters change presentation only and do not mutate files, and the current selection persists until reset.
 3. Future follow-up.
    If needed, add richer text matching or quick filter chips without introducing saved queries.
 
@@ -218,12 +220,12 @@ The display name omits "Obsidian" to stay aligned with common community plugin n
 
 ### Grouping
 
-1. Partially implemented.
-   The current file view now supports grouping by day.
+1. Implemented.
+   The current file view now supports grouping by day, metric, and source.
 2. Keep no grouping as the default.
    The plain timeline remains the simplest presentation.
 3. Future follow-up.
-   Add key and source grouping next, and make groups collapsible if the layout starts to feel heavy.
+   Make groups collapsible if the layout starts to feel heavy.
 4. Apply grouping after filtering and sorting.
    Filter -> sort -> group remains the cleanest pipeline for a file lens.
 
@@ -231,11 +233,9 @@ The display name omits "Obsidian" to stay aligned with common community plugin n
 
 1. Add metrics file management.
    Create new metrics files and support rename/delete from the plugin. The record lens is working; file lifecycle is the next missing layer.
-2. Expand grouping beyond day.
-   Add key and source grouping, and keep groups collapsible.
-3. Refine the filter/sort/group toolbar.
+2. Refine the filter/sort/group toolbar.
    Keep the controls minimal and local to the current view, but improve density and discoverability if needed.
-4. Add cross-file record navigation.
+3. Add cross-file record navigation.
    Provide a search/open flow by `id`, `origin_id`, `key`, or source across the metrics root without introducing a hidden database.
 
 ## Open questions

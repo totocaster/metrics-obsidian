@@ -941,25 +941,85 @@ function deleteMetricRecordFromMetricsData(data, targetId) {
 
 // src/settings.ts
 var import_obsidian3 = require("obsidian");
+
+// src/view-state.ts
+var DEFAULT_VIEW_STATE = {
+  fromDate: "",
+  groupBy: "none",
+  key: "",
+  searchText: "",
+  sortOrder: "newest",
+  source: "",
+  status: "all",
+  timeRange: "all",
+  toDate: ""
+};
+function createDefaultViewState() {
+  return { ...DEFAULT_VIEW_STATE };
+}
+function normalizeSortOrder(value) {
+  return value === "oldest" || value === "value-desc" || value === "value-asc" ? value : "newest";
+}
+function normalizeGroupBy(value) {
+  return value === "day" || value === "key" || value === "source" ? value : "none";
+}
+function normalizeStatus(value) {
+  return value === "valid" || value === "warning" || value === "error" ? value : "all";
+}
+function normalizeTimeRange(value) {
+  return value === "today" || value === "this-week" || value === "past-7-days" || value === "past-30-days" || value === "this-month" || value === "custom" ? value : "all";
+}
+function normalizeString(value) {
+  return typeof value === "string" ? value : "";
+}
+function normalizeMetricsViewState(value) {
+  return {
+    fromDate: normalizeString(value?.fromDate),
+    groupBy: normalizeGroupBy(value?.groupBy),
+    key: normalizeString(value?.key),
+    searchText: normalizeString(value?.searchText),
+    sortOrder: normalizeSortOrder(value?.sortOrder),
+    source: normalizeString(value?.source),
+    status: normalizeStatus(value?.status),
+    timeRange: normalizeTimeRange(value?.timeRange),
+    toDate: normalizeString(value?.toDate)
+  };
+}
+function normalizePersistedMetricsViewState(value) {
+  return {
+    advancedControlsExpanded: value?.advancedControlsExpanded === true,
+    viewState: normalizeMetricsViewState(value?.viewState)
+  };
+}
+
+// src/settings.ts
 var DEFAULT_SETTINGS = {
-  metricsRoot: "Metrics",
-  supportedExtensions: [".metrics.ndjson"],
   defaultWriteFile: "Metrics/All.metrics.ndjson",
+  metricsRoot: "Metrics",
+  persistedViewStateByPath: {},
   recordReferencePrefix: "metric:",
-  showMetricIcons: true
+  showMetricIcons: true,
+  supportedExtensions: [".metrics.ndjson"]
 };
 function normalizeMetricsSettings(settings) {
   const supportedExtensions = settings.supportedExtensions?.length ? settings.supportedExtensions : DEFAULT_SETTINGS.supportedExtensions;
+  const persistedViewStateByPath = Object.fromEntries(
+    Object.entries(settings.persistedViewStateByPath ?? {}).map(([path, value]) => [
+      (0, import_obsidian3.normalizePath)(path),
+      normalizePersistedMetricsViewState(value)
+    ])
+  );
   return {
+    defaultWriteFile: (0, import_obsidian3.normalizePath)(settings.defaultWriteFile ?? DEFAULT_SETTINGS.defaultWriteFile),
     metricsRoot: (0, import_obsidian3.normalizePath)(settings.metricsRoot ?? DEFAULT_SETTINGS.metricsRoot),
+    persistedViewStateByPath,
+    recordReferencePrefix: settings.recordReferencePrefix?.trim() || DEFAULT_SETTINGS.recordReferencePrefix,
+    showMetricIcons: settings.showMetricIcons ?? DEFAULT_SETTINGS.showMetricIcons,
     supportedExtensions: Array.from(
       new Set(
         supportedExtensions.map((value) => value.trim()).filter((value) => value.length > 0)
       )
-    ),
-    defaultWriteFile: (0, import_obsidian3.normalizePath)(settings.defaultWriteFile ?? DEFAULT_SETTINGS.defaultWriteFile),
-    recordReferencePrefix: settings.recordReferencePrefix?.trim() || DEFAULT_SETTINGS.recordReferencePrefix,
-    showMetricIcons: settings.showMetricIcons ?? DEFAULT_SETTINGS.showMetricIcons
+    )
   };
 }
 function formatExtensions(extensions) {
@@ -1097,20 +1157,6 @@ function metricIconForKey(metricKey) {
 
 // src/view.ts
 var METRICS_VIEW_TYPE = "metrics-file-view";
-var DEFAULT_VIEW_STATE = {
-  fromDate: "",
-  groupBy: "none",
-  key: "",
-  searchText: "",
-  sortOrder: "newest",
-  source: "",
-  status: "all",
-  timeRange: "all",
-  toDate: ""
-};
-function createDefaultViewState() {
-  return { ...DEFAULT_VIEW_STATE };
-}
 function logicalMetricsBaseName(fileName, extensions) {
   const matchingExtension = extensions.find((extension) => fileName.endsWith(extension));
   if (matchingExtension) {
@@ -1248,6 +1294,12 @@ function collectFilterValues(rows, field) {
     )
   ).sort((left, right) => left.localeCompare(right));
 }
+function withSelectedFilterValue(options, selected) {
+  if (selected.length === 0 || options.includes(selected)) {
+    return options;
+  }
+  return [selected, ...options];
+}
 function applyMetricsViewState(rows, viewState) {
   const normalizedSearch = viewState.searchText.trim().toLowerCase();
   const { fromDate, toDate } = resolvedTimeRange(viewState);
@@ -1324,7 +1376,16 @@ function hasActiveViewControls(viewState) {
   return hasActivePrimaryControls(viewState) || advancedControlCount(viewState) > 0;
 }
 function hasActivePrimaryControls(viewState) {
-  return viewState.key.length > 0 || viewState.searchText.trim().length > 0 || viewState.sortOrder !== DEFAULT_VIEW_STATE.sortOrder;
+  return hasActiveTimeRange(viewState) || viewState.key.length > 0 || viewState.searchText.trim().length > 0 || viewState.sortOrder !== DEFAULT_VIEW_STATE.sortOrder;
+}
+function hasActiveTimeRange(viewState) {
+  if (viewState.timeRange === "all") {
+    return false;
+  }
+  if (viewState.timeRange === "custom") {
+    return viewState.fromDate.length > 0 || viewState.toDate.length > 0;
+  }
+  return true;
 }
 function advancedControlCount(viewState) {
   let count = 0;
@@ -1348,11 +1409,72 @@ function groupRowsByDay(rows) {
     current.push(row);
     groups.set(key, current);
   });
-  return Array.from(groups.entries()).map(([key, groupedRows]) => ({
-    heading: key === "__no_date__" ? "No date" : `[[${key}]]`,
+  return Array.from(groups.entries()).map(([key, groupedRows2]) => ({
+    heading: key === "__no_date__" ? "No date" : key,
     key,
-    rows: groupedRows
+    linkTarget: key === "__no_date__" ? void 0 : key,
+    rows: groupedRows2
   }));
+}
+function groupRowsByField(rows, field) {
+  const groups = /* @__PURE__ */ new Map();
+  rows.forEach((row) => {
+    const value = row.metric?.[field];
+    const key = typeof value === "string" && value.length > 0 ? value : "__empty__";
+    const current = groups.get(key) ?? [];
+    current.push(row);
+    groups.set(key, current);
+  });
+  return Array.from(groups.entries()).map(([key, groupedRows2]) => ({
+    heading: key === "__empty__" ? field === "key" ? "No metric" : "No source" : key,
+    key,
+    rows: groupedRows2
+  }));
+}
+function groupedRows(rows, groupBy) {
+  switch (groupBy) {
+    case "day":
+      return groupRowsByDay(rows);
+    case "key":
+      return groupRowsByField(rows, "key");
+    case "source":
+      return groupRowsByField(rows, "source");
+    case "none":
+    default:
+      return [];
+  }
+}
+function groupBySummaryLabel(groupBy) {
+  switch (groupBy) {
+    case "day":
+      return "grouped by day";
+    case "key":
+      return "grouped by metric";
+    case "source":
+      return "grouped by source";
+    case "none":
+    default:
+      return null;
+  }
+}
+function renderGroupHeading(container, group, plugin, sourcePath) {
+  const heading = container.createEl("h2");
+  if (!group.linkTarget) {
+    heading.setText(group.heading);
+    return;
+  }
+  const linkTarget = group.linkTarget;
+  const link = heading.createEl("a", {
+    cls: "internal-link",
+    href: linkTarget,
+    text: group.heading
+  });
+  link.dataset.href = linkTarget;
+  link.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    void plugin.app.workspace.openLinkText(linkTarget, sourcePath);
+  });
 }
 function isEditableRecord(metric) {
   return Boolean(
@@ -1563,6 +1685,7 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
   pendingControlFocus = null;
   pendingMetricIdFocus = null;
   viewState = createDefaultViewState();
+  viewStateFilePath = null;
   getViewType() {
     return METRICS_VIEW_TYPE;
   }
@@ -1612,10 +1735,21 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
     this.render();
   }
   focusMetricRecord(metricId) {
+    if (this.file) {
+      this.viewStateFilePath = this.file.path;
+    }
     this.viewState = createDefaultViewState();
     this.advancedControlsExpanded = false;
     this.pendingMetricIdFocus = metricId;
     this.render();
+  }
+  persistCurrentViewState() {
+    this.plugin.persistViewState(this.viewStateFilePath, this.viewState, this.advancedControlsExpanded);
+  }
+  resetCurrentViewState() {
+    this.viewState = createDefaultViewState();
+    this.advancedControlsExpanded = false;
+    this.plugin.resetPersistedViewState(this.viewStateFilePath);
   }
   render() {
     this.contentEl.empty();
@@ -1627,10 +1761,26 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
       });
       return;
     }
+    const currentFile = this.file;
+    if (this.viewStateFilePath !== currentFile.path) {
+      const persistedViewState = this.plugin.getPersistedViewState(currentFile.path);
+      this.advancedControlsExpanded = persistedViewState.advancedControlsExpanded;
+      this.viewState = persistedViewState.viewState;
+      this.viewStateFilePath = currentFile.path;
+    }
     const analysis = analyzeMetricsData(this.data ?? "");
-    const availableKeys = collectFilterValues(analysis.rows, "key");
-    const availableSources = collectFilterValues(analysis.rows, "source");
-    this.normalizeViewState(availableKeys, availableSources);
+    const availableKeys = withSelectedFilterValue(
+      collectFilterValues(analysis.rows, "key"),
+      this.viewState.key
+    );
+    const availableSources = withSelectedFilterValue(
+      collectFilterValues(analysis.rows, "source"),
+      this.viewState.source
+    );
+    const normalizedViewState = this.normalizeViewState();
+    if (normalizedViewState) {
+      this.persistCurrentViewState();
+    }
     const visibleRows = applyMetricsViewState(analysis.rows, this.viewState);
     const hasActiveControls = hasActiveViewControls(this.viewState);
     if (analysis.rows.length > 0 || hasActiveControls) {
@@ -1657,31 +1807,22 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
         cls: "metrics-lens-empty",
         text: "No records match the current view."
       });
-      if (hasActiveControls) {
-        const resetButton = emptyState.createEl("button", { text: "Reset view" });
-        resetButton.type = "button";
-        resetButton.setAttribute("aria-label", "Reset current filters and sorting");
-        resetButton.addEventListener("click", () => {
-          this.viewState = createDefaultViewState();
-          this.render();
-        });
-      }
     } else {
       const recordsSection = container.createDiv({ cls: "metrics-lens-section" });
-      if (this.viewState.groupBy === "day") {
-        groupRowsByDay(visibleRows).forEach((group) => {
+      if (this.viewState.groupBy !== "none") {
+        groupedRows(visibleRows, this.viewState.groupBy).forEach((group) => {
           const groupSection = recordsSection.createDiv({ cls: "metrics-lens-group" });
-          groupSection.createEl("h2", {
-            cls: "metrics-lens-group-heading",
-            text: group.heading
+          const headingContainer = groupSection.createDiv({
+            cls: ["metrics-lens-group-heading", "markdown-reading-view"]
           });
+          renderGroupHeading(headingContainer, group, this.plugin, currentFile.path);
           const recordsList = groupSection.createDiv({ cls: "metrics-lens-records" });
           group.rows.forEach((row, index) => {
             renderRecord(
               recordsList,
               row,
               this.plugin,
-              this.file,
+              currentFile,
               this.plugin.settings.recordReferencePrefix,
               {
                 isFirst: index === 0,
@@ -1697,7 +1838,7 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
             recordsList,
             row,
             this.plugin,
-            this.file,
+            currentFile,
             this.plugin.settings.recordReferencePrefix,
             {
               isFirst: index === 0,
@@ -1718,13 +1859,14 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
     if (this.viewState.sortOrder !== "newest") {
       summaryParts.push(this.sortOrderLabel(this.viewState.sortOrder));
     }
-    if (this.viewState.groupBy === "day") {
-      summaryParts.push("grouped by day");
+    const groupingLabel = groupBySummaryLabel(this.viewState.groupBy);
+    if (groupingLabel) {
+      summaryParts.push(groupingLabel);
     }
     const footer = container.createDiv({ cls: "metrics-lens-footer" });
     footer.createSpan({
       cls: "metrics-lens-file-meta",
-      text: `${this.file.path} \xB7 ${summaryParts.join(" \xB7 ")}`
+      text: `${currentFile.path} \xB7 ${summaryParts.join(" \xB7 ")}`
     });
     if (analysis.legacyRows > 0) {
       const assignButton = footer.createEl("button", { text: "Assign missing ids" });
@@ -1766,6 +1908,7 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
     timeRangeSelect.addEventListener("change", () => {
       this.pendingControlFocus = { name: "timeRange" };
       this.viewState.timeRange = timeRangeSelect.value;
+      this.persistCurrentViewState();
       this.render();
     });
     if (this.viewState.timeRange === "custom") {
@@ -1779,6 +1922,7 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
       fromDateInput.addEventListener("change", () => {
         this.pendingControlFocus = this.controlFocusState("fromDate", fromDateInput);
         this.viewState.fromDate = fromDateInput.value;
+        this.persistCurrentViewState();
         this.render();
       });
       const toDateInput = primaryControls.createEl("input", {
@@ -1791,6 +1935,7 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
       toDateInput.addEventListener("change", () => {
         this.pendingControlFocus = this.controlFocusState("toDate", toDateInput);
         this.viewState.toDate = toDateInput.value;
+        this.persistCurrentViewState();
         this.render();
       });
     }
@@ -1811,6 +1956,7 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
     keySelect.addEventListener("change", () => {
       this.pendingControlFocus = { name: "key" };
       this.viewState.key = keySelect.value;
+      this.persistCurrentViewState();
       this.render();
     });
     const searchInput = primaryControls.createEl("input", {
@@ -1824,6 +1970,7 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
     searchInput.addEventListener("input", () => {
       this.pendingControlFocus = this.controlFocusState("search", searchInput);
       this.viewState.searchText = searchInput.value;
+      this.persistCurrentViewState();
       this.render();
     });
     const sortButton = primaryControls.createEl("button", {
@@ -1848,12 +1995,27 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
           item.setTitle(option.label).setChecked(this.viewState.sortOrder === option.value).onClick(() => {
             this.pendingControlFocus = { name: "sort" };
             this.viewState.sortOrder = option.value;
+            this.persistCurrentViewState();
             this.render();
           });
         });
       });
       menu.showAtMouseEvent(event);
     });
+    if (hasActiveViewControls(this.viewState)) {
+      const resetButton = primaryControls.createEl("button", {
+        cls: ["clickable-icon", "metrics-lens-icon-button", "metrics-lens-reset-view-button"]
+      });
+      resetButton.type = "button";
+      resetButton.dataset.metricsControl = "reset";
+      resetButton.setAttribute("aria-label", "Reset current filters and sorting");
+      resetButton.setAttribute("data-tooltip-position", "top");
+      (0, import_obsidian5.setIcon)(resetButton, "rotate-ccw");
+      resetButton.addEventListener("click", () => {
+        this.resetCurrentViewState();
+        this.render();
+      });
+    }
     const moreButton = primaryControls.createEl("button", {
       cls: ["clickable-icon", "metrics-lens-icon-button", "metrics-lens-more-controls-button"]
     });
@@ -1869,6 +2031,7 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
     moreButton.addEventListener("click", () => {
       this.pendingControlFocus = { name: "more" };
       this.advancedControlsExpanded = !this.advancedControlsExpanded;
+      this.persistCurrentViewState();
       this.render();
     });
     if (showAdvancedControls) {
@@ -1890,6 +2053,7 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
       sourceSelect.addEventListener("change", () => {
         this.pendingControlFocus = { name: "source" };
         this.viewState.source = sourceSelect.value;
+        this.persistCurrentViewState();
         this.render();
       });
       const statusSelect = advancedControls.createEl("select", { cls: "metrics-lens-control" });
@@ -1910,6 +2074,7 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
       statusSelect.addEventListener("change", () => {
         this.pendingControlFocus = { name: "status" };
         this.viewState.status = statusSelect.value;
+        this.persistCurrentViewState();
         this.render();
       });
       const groupBySelect = advancedControls.createEl("select", { cls: "metrics-lens-control" });
@@ -1917,7 +2082,9 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
       groupBySelect.setAttribute("aria-label", "Group metrics");
       [
         { label: "No grouping", value: "none" },
-        { label: "Group by day", value: "day" }
+        { label: "Group by day", value: "day" },
+        { label: "Group by metric", value: "key" },
+        { label: "Group by source", value: "source" }
       ].forEach((option) => {
         groupBySelect.createEl("option", {
           text: option.label,
@@ -1928,35 +2095,20 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
       groupBySelect.addEventListener("change", () => {
         this.pendingControlFocus = { name: "groupBy" };
         this.viewState.groupBy = groupBySelect.value;
-        this.render();
-      });
-    }
-    if (hasActiveViewControls(this.viewState)) {
-      const resetButton = primaryControls.createEl("button", {
-        cls: "metrics-lens-reset-view-button",
-        text: "Reset"
-      });
-      resetButton.type = "button";
-      resetButton.setAttribute("aria-label", "Reset current filters and sorting");
-      resetButton.addEventListener("click", () => {
-        this.viewState = createDefaultViewState();
-        this.advancedControlsExpanded = false;
+        this.persistCurrentViewState();
         this.render();
       });
     }
   }
-  normalizeViewState(availableKeys, availableSources) {
-    if (this.viewState.key && !availableKeys.includes(this.viewState.key)) {
-      this.viewState.key = "";
-    }
-    if (this.viewState.source && !availableSources.includes(this.viewState.source)) {
-      this.viewState.source = "";
-    }
+  normalizeViewState() {
+    let changed = false;
     if (this.viewState.timeRange === "custom" && this.viewState.fromDate && this.viewState.toDate && this.viewState.fromDate > this.viewState.toDate) {
       const nextFromDate = this.viewState.toDate;
       this.viewState.toDate = this.viewState.fromDate;
       this.viewState.fromDate = nextFromDate;
+      changed = true;
     }
+    return changed;
   }
   sortOrderLabel(sortOrder) {
     switch (sortOrder) {
@@ -2030,6 +2182,7 @@ var MetricsPlugin = class extends import_obsidian6.Plugin {
   suppressedAutoOpenPaths = /* @__PURE__ */ new Set();
   fileExplorerObserver = null;
   fileExplorerSyncQueued = false;
+  persistViewStateTimer = null;
   async onload() {
     await this.loadSettings();
     this.registerView(
@@ -2138,6 +2291,11 @@ var MetricsPlugin = class extends import_obsidian6.Plugin {
     });
   }
   async onunload() {
+    if (this.persistViewStateTimer !== null) {
+      window.clearTimeout(this.persistViewStateTimer);
+      this.persistViewStateTimer = null;
+      await this.saveSettings();
+    }
     this.fileExplorerObserver?.disconnect();
     this.fileExplorerObserver = null;
     this.restoreFileExplorerLabels();
@@ -2161,6 +2319,52 @@ var MetricsPlugin = class extends import_obsidian6.Plugin {
   async saveSettings() {
     this.settings = normalizeMetricsSettings(this.settings);
     await this.saveData(this.settings);
+  }
+  getPersistedViewState(filePath) {
+    if (!filePath) {
+      return {
+        advancedControlsExpanded: false,
+        viewState: createDefaultViewState()
+      };
+    }
+    const persistedViewState = this.settings.persistedViewStateByPath[filePath];
+    if (!persistedViewState) {
+      return {
+        advancedControlsExpanded: false,
+        viewState: createDefaultViewState()
+      };
+    }
+    const { advancedControlsExpanded, viewState } = persistedViewState;
+    return {
+      advancedControlsExpanded,
+      viewState: normalizeMetricsViewState(viewState)
+    };
+  }
+  persistViewState(filePath, viewState, advancedControlsExpanded) {
+    if (!filePath) {
+      return;
+    }
+    this.settings.persistedViewStateByPath[filePath] = {
+      advancedControlsExpanded,
+      viewState: normalizeMetricsViewState(viewState)
+    };
+    this.queuePersistedViewStateSave();
+  }
+  resetPersistedViewState(filePath) {
+    if (!filePath) {
+      return;
+    }
+    delete this.settings.persistedViewStateByPath[filePath];
+    this.queuePersistedViewStateSave();
+  }
+  queuePersistedViewStateSave() {
+    if (this.persistViewStateTimer !== null) {
+      window.clearTimeout(this.persistViewStateTimer);
+    }
+    this.persistViewStateTimer = window.setTimeout(() => {
+      this.persistViewStateTimer = null;
+      void this.saveSettings();
+    }, 200);
   }
   async activateView() {
     const activeFile = this.app.workspace.getActiveFile();
