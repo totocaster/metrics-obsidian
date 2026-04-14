@@ -1,24 +1,29 @@
 # Metrics
 
-View, edit, and manage plaintext metric files in Obsidian.
+File-first metrics for Obsidian.
 
-Metrics is a file-first Obsidian plugin for working with `*.metrics.ndjson` datasets inside your vault. It treats newline-delimited JSON files as the canonical source of truth and provides a compact lens for browsing, validating, editing, filtering, grouping, and charting metric records without introducing a hidden database.
+Metrics is an Obsidian plugin for viewing and editing canonical `*.metrics.ndjson` files inside your vault. The files stay as the source of truth: no hidden database, no required cache, and no saved-dashboard layer sitting behind the UI.
+
+## Status
+
+Metrics is in active `0.1.x` development and currently targets Obsidian `1.6.0+`.
 
 ## What it does
 
-- Opens `*.metrics.ndjson` files directly in a dedicated metrics view
-- Keeps metrics files visible in the file browser with clean dataset labels
-- Parses and validates records line by line
-- Supports record create, edit, delete, and missing-id assignment
-- Supports metrics file create, rename, and delete
-- Adds a command-palette search to find measurements across metrics files and open the matching row
-- Renders records as a compact timeline with optional metric icons
-- Uses a catalog-backed registry for supported metric labels, units, icons, and formatting
-- Lets lists and selectors show either friendly metric names or canonical keys
-- Persists per-file filters, filter-bar visibility, sorting, grouping, and chart visibility
-- Adds interactive charts above the timeline using the same visible rows as the list
+- Opens supported metrics files in a dedicated metrics view
+- Keeps metrics files visible in the file browser with clean logical labels
+- Parses NDJSON line by line and surfaces validation issues inline
+- Creates, edits, and deletes records in the current file
+- Assigns ULID ids to legacy rows that are missing `id`
+- Creates, renames, and deletes metrics files under the configured root
+- Searches records across metrics files from the command palette and jumps to the matching row
+- Filters by time range, metric, source, validation status, and free text
+- Sorts by newest, oldest, value high-low, and value low-high
+- Groups records by day, metric, or source
 - Adds optional derived summary rows for average, median, minimum, maximum, sum, and count
-- Copies stable plain-text metric references as `metric:<id>`
+- Adds optional charts driven by the same visible rows as the timeline
+- Copies stable plain-text references such as `metric:<id>`
+- Persists per-file view state for filters, sorting, grouping, and chart visibility
 
 ## File format
 
@@ -50,85 +55,71 @@ Example:
 
 Default conventions:
 
-- metrics root: `Metrics/`
-- file extension: `*.metrics.ndjson`
-- default write target: `Metrics/All.metrics.ndjson`
+- Metrics root: `Metrics/`
+- Supported extension: `*.metrics.ndjson`
+- Default write target: `Metrics/All.metrics.ndjson`
+- Default record reference prefix: `metric:`
+
+Validation rules are strict about structure and required fields, but the plugin stays file-first:
+
+- unknown metric keys are allowed and shown as warnings
+- unknown units are allowed and shown as warnings
+- known-key and unit mismatches are warned instead of silently normalized
+- duplicate `id` values are treated as errors and block safe record mutations
+
+## Commands
+
+The current command surface includes:
+
+- `Open current metrics file`
+- `Open metrics view`
+- `Search metrics`
+- `Add record to current metrics file`
+- `New metrics file`
+- `Rename current metrics file`
+- `Delete current metrics file`
+- `Assign missing ids in current metrics file`
+
+Record-level copy, edit, and delete actions are available from the timeline row menu.
+
+## Settings
+
+Metrics currently exposes settings for:
+
+- metrics root folder
+- supported extensions
+- default write file
+- record reference prefix
+- metric label display mode: friendly names or canonical keys
+- metric icon visibility
 
 ## Built-in catalog
 
-The plugin now carries a first-party metric catalog:
-
-- machine-readable source: `src/metric-catalog.json`
-- generated human reference: `docs/metric-catalog.md`
+The plugin ships with a first-party metric catalog in [`src/metric-catalog.json`](src/metric-catalog.json).
 
 That catalog drives:
 
-- supported metric labels in rows and charts
-- unit validation and per-metric allowed units
+- metric labels in rows, filters, and charts
+- allowed units and unit formatting
 - icon mapping
-- display formatting and authoring suggestions
+- record modal suggestions
 
-The current first-party catalog is intentionally shaped around the linked vault's real data surface, including Withings body composition metrics, WHOOP recovery and sleep metrics, manual nutrition intake, and medication dosage records.
+## Non-goals
 
-Unknown keys are still allowed by the file contract, but they are treated as outside the built-in catalog and surface as warnings instead of hard failures.
+Metrics is intentionally not:
 
-## Current feature set
-
-### Timeline view
-
-- newest-first by default
-- compact, minimal layout that leans on Obsidian styling
-- row menu for copy, edit, and delete actions
-- validation surfaced inline instead of hidden
-
-### Filtering and grouping
-
-- time presets including today, this week, past 7 days, past 30 days, past 3 months, past 6 months, past 1 year, this month, and custom range
-- title-bar toggle to show or hide the filter bar
-- multi-select metric filter
-- search
-- title-bar sort control
-- grouping by day, metric, and source
-- optional summary rows appended after the visible timeline or each visible group
-- per-file view state persistence until reset
-
-### Charts
-
-- optional chart toggle in the title bar
-- filter toggle in the title bar shows when filters or grouping are active
-- charts respect the same visible rows as the timeline
-- auto line/bar behavior
-- stacked day bars for day grouping
-- multiple metrics supported
-- interactive legend, hover state, and row focus
-
-## What it does not do
-
-- no ingestion or import pipelines
-- no hidden database or required cache
-- no saved dashboards or query language
-- no note/document modeling
-- no in-note metric reference resolution in this phase
-
-## Commands and actions
-
-The plugin currently supports commands for:
-
-- searching measurements across metrics files and opening the matching row
-- creating a metrics file
-- renaming the current metrics file
-- deleting the current metrics file
-- assigning missing ids in the current metrics file
-
-Record-level actions are available from the timeline row menu.
+- an ingestion or import pipeline
+- a hidden database or cache-backed system
+- a saved-dashboard or saved-query product
+- a note or document feature set
+- an in-note metric reference resolver in the current phase
 
 ## Development
 
-### Local setup
+Install dependencies:
 
 ```bash
 npm install
-npm run dev
 ```
 
 Useful commands:
@@ -136,18 +127,5 @@ Useful commands:
 - `npm run dev` starts the build watcher
 - `npm run build` creates a production bundle
 - `npm run check` runs TypeScript type-checking
-- `npm run generate:metric-catalog-doc` regenerates the human-readable catalog from the JSON source
 
-### Live vault workflow
-
-This repo is designed to be linked into an Obsidian vault during development so changes can be tested in a real vault as the plugin rebuilds.
-
-## Status
-
-This project is in active `0.1.x` development. The current phase covers the file contract, current-file CRUD, file lifecycle, file search, filtering, grouping, and charting for plaintext metrics files.
-
-For implementation detail and current scope, see:
-
-- `docs/spec.md`
-- `docs/charts.md`
-- `docs/metric-catalog.md`
+For local testing, link or copy `manifest.json`, `main.js`, and `styles.css` into `.obsidian/plugins/metrics-lens/` inside a vault.
