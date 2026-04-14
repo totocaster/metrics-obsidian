@@ -1,5 +1,7 @@
 import { Menu, Notice, setIcon, TFile, TextFileView, WorkspaceLeaf } from "obsidian";
 
+import { buildMetricsChartModel } from "./chart-model";
+import { renderMetricsChart } from "./chart-renderer";
 import { toMetricReference, type MetricRecord } from "./contract";
 import type MetricsPlugin from "./main";
 import { metricIconForKey } from "./metric-icons";
@@ -306,6 +308,7 @@ function hasActivePrimaryControls(viewState: MetricsViewState): boolean {
     hasActiveTimeRange(viewState) ||
     viewState.key.length > 0 ||
     viewState.searchText.trim().length > 0 ||
+    viewState.showChart !== DEFAULT_VIEW_STATE.showChart ||
     viewState.sortOrder !== DEFAULT_VIEW_STATE.sortOrder
   );
 }
@@ -705,10 +708,13 @@ function renderRecord(
 export class MetricsFileView extends TextFileView {
   allowNoFile = true;
   private advancedControlsExpanded = false;
+  private addRecordActionEl: HTMLElement | null = null;
+  private chartActionEl: HTMLElement | null = null;
   private clearTargetedRecordTimeout: number | null = null;
   private pendingControlFocus: ControlFocusState | null = null;
   private pendingMetricIdFocus: string | null = null;
   private viewState: MetricsViewState = createDefaultViewState();
+  private viewActionSeparatorEl: HTMLElement | null = null;
   private viewStateFilePath: string | null = null;
 
   constructor(
@@ -737,14 +743,7 @@ export class MetricsFileView extends TextFileView {
 
   async onOpen(): Promise<void> {
     this.contentEl.classList.add("metrics-lens-view-root");
-    this.addAction("plus", "Add record", () => {
-      if (!this.file) {
-        new Notice("Open a metrics file first.");
-        return;
-      }
-
-      this.plugin.openCreateRecordModal(this.file);
-    });
+    this.ensureHeaderActions();
     this.render();
   }
 
@@ -783,10 +782,64 @@ export class MetricsFileView extends TextFileView {
     if (this.file) {
       this.viewStateFilePath = this.file.path;
     }
+    const showChart = this.viewState.showChart;
     this.viewState = createDefaultViewState();
+    this.viewState.showChart = showChart;
     this.advancedControlsExpanded = false;
     this.pendingMetricIdFocus = metricId;
     this.render();
+  }
+
+  private ensureHeaderActions(): void {
+    if (!this.chartActionEl) {
+      this.chartActionEl = this.addAction("chart-line", "Show chart", () => {
+        if (!this.file) {
+          new Notice("Open a metrics file first.");
+          return;
+        }
+
+        this.viewState.showChart = !this.viewState.showChart;
+        this.persistCurrentViewState();
+        this.render();
+      });
+    }
+
+    if (!this.addRecordActionEl) {
+      this.addRecordActionEl = this.addAction("plus", "Add record", () => {
+        if (!this.file) {
+          new Notice("Open a metrics file first.");
+          return;
+        }
+
+        this.plugin.openCreateRecordModal(this.file);
+      });
+    }
+
+    if (this.addRecordActionEl?.parentElement && !this.viewActionSeparatorEl) {
+      const separator = this.addRecordActionEl.parentElement.createDiv({
+        cls: "metrics-lens-view-action-separator",
+      });
+      this.addRecordActionEl.parentElement.insertBefore(separator, this.addRecordActionEl);
+      this.viewActionSeparatorEl = separator;
+    }
+
+    this.syncHeaderActions();
+  }
+
+  private syncHeaderActions(): void {
+    if (this.chartActionEl) {
+      this.chartActionEl.toggleClass("is-active", this.viewState.showChart);
+      this.chartActionEl.setAttribute(
+        "aria-label",
+        this.viewState.showChart ? "Hide chart" : "Show chart",
+      );
+      this.chartActionEl.setAttribute("data-tooltip-position", "bottom");
+    }
+
+    if (this.addRecordActionEl) {
+      this.addRecordActionEl.setAttribute("aria-label", "Add record");
+      this.addRecordActionEl.setAttribute("data-tooltip-position", "bottom");
+    }
   }
 
   private persistCurrentViewState(): void {
@@ -797,6 +850,19 @@ export class MetricsFileView extends TextFileView {
     this.viewState = createDefaultViewState();
     this.advancedControlsExpanded = false;
     this.plugin.resetPersistedViewState(this.viewStateFilePath);
+  }
+
+  private renderChart(container: HTMLElement, visibleRows: ParsedMetricRow[]): void {
+    if (!this.viewState.showChart || visibleRows.length === 0) {
+      return;
+    }
+
+    const chartModel = buildMetricsChartModel(visibleRows, this.viewState.groupBy);
+    if (!chartModel) {
+      return;
+    }
+
+    renderMetricsChart(container, chartModel);
   }
 
   private render(): void {
@@ -835,6 +901,9 @@ export class MetricsFileView extends TextFileView {
     }
     const visibleRows = applyMetricsViewState(analysis.rows, this.viewState);
     const hasActiveControls = hasActiveViewControls(this.viewState);
+    this.syncHeaderActions();
+
+    this.renderChart(container, visibleRows);
 
     if (analysis.rows.length > 0 || hasActiveControls) {
       this.renderControls(container, availableKeys, availableSources);

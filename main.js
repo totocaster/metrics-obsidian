@@ -948,6 +948,7 @@ var DEFAULT_VIEW_STATE = {
   groupBy: "none",
   key: "",
   searchText: "",
+  showChart: false,
   sortOrder: "newest",
   source: "",
   status: "all",
@@ -978,6 +979,7 @@ function normalizeMetricsViewState(value) {
     groupBy: normalizeGroupBy(value?.groupBy),
     key: normalizeString(value?.key),
     searchText: normalizeString(value?.searchText),
+    showChart: value?.showChart === true,
     sortOrder: normalizeSortOrder(value?.sortOrder),
     source: normalizeString(value?.source),
     status: normalizeStatus(value?.status),
@@ -1091,6 +1093,1127 @@ var MetricsSettingTab = class extends import_obsidian3.PluginSettingTab {
 // src/view.ts
 var import_obsidian5 = require("obsidian");
 
+// src/chart-model.ts
+var NO_UNIT_KEY = "__no_unit__";
+var MAX_CHART_PRECISION = 6;
+function rowTimestamp(row) {
+  const ts = row.metric?.ts;
+  if (typeof ts !== "string") {
+    return null;
+  }
+  const parsed = Date.parse(ts);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+function rowDateValue(row) {
+  if (typeof row.metric?.date === "string" && row.metric.date.length === 10) {
+    return row.metric.date;
+  }
+  const ts = row.metric?.ts;
+  if (typeof ts !== "string" || ts.length < 10) {
+    return null;
+  }
+  const parsed = Date.parse(ts);
+  if (Number.isNaN(parsed)) {
+    return null;
+  }
+  return ts.slice(0, 10);
+}
+function startOfDayTimestamp(day) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+    return null;
+  }
+  const timestamp = Date.parse(`${day}T00:00:00Z`);
+  return Number.isNaN(timestamp) ? null : timestamp;
+}
+function uniqueStrings(values) {
+  return Array.from(new Set(values));
+}
+function clampPrecision(value) {
+  return Math.max(0, Math.min(MAX_CHART_PRECISION, value));
+}
+function rawValuePrecision(row) {
+  const match = /"value"\s*:\s*-?\d+(?:\.(\d+))?(?:[eE][+-]?\d+)?/.exec(row.rawLine);
+  return clampPrecision(match?.[1]?.length ?? 0);
+}
+function maxPrecisionForRows(rows) {
+  return rows.reduce((maxPrecision, row) => Math.max(maxPrecision, rawValuePrecision(row)), 0);
+}
+function formatFixed(value, decimals) {
+  return value.toLocaleString(void 0, {
+    maximumFractionDigits: decimals,
+    minimumFractionDigits: decimals
+  });
+}
+function resolveAxisPrecision(minValue, maxValue, minimumPrecision) {
+  const range = maxValue - minValue || 1;
+  const guideValues = [maxValue, minValue + range * 0.75, minValue + range * 0.5, minValue + range * 0.25, minValue];
+  for (let decimals = clampPrecision(minimumPrecision); decimals <= MAX_CHART_PRECISION; decimals += 1) {
+    const labels = guideValues.map((value) => formatFixed(value, decimals));
+    let unique = true;
+    for (let index = 1; index < labels.length; index += 1) {
+      if (labels[index] === labels[index - 1]) {
+        unique = false;
+        break;
+      }
+    }
+    if (unique) {
+      return decimals;
+    }
+  }
+  return MAX_CHART_PRECISION;
+}
+function hasPlottableValue(row) {
+  return typeof row.metric?.key === "string" && row.metric.key.length > 0 && typeof row.metric?.value === "number" && Number.isFinite(row.metric.value);
+}
+function collectValueRange(series) {
+  const values = series.flatMap((entry) => entry.points.map((point) => point.value));
+  if (values.length === 0) {
+    return null;
+  }
+  let minValue = Math.min(...values);
+  let maxValue = Math.max(...values);
+  const range = maxValue - minValue;
+  if (range === 0) {
+    if (maxValue === 0) {
+      minValue = -1;
+      maxValue = 1;
+    } else {
+      const padding = Math.abs(maxValue) * 0.1;
+      minValue -= padding;
+      maxValue += padding;
+    }
+  } else {
+    const padding = range * 0.06;
+    minValue -= padding;
+    maxValue += padding;
+  }
+  return { maxValue, minValue };
+}
+function collectStackedValueRange(stackSegments) {
+  const totals = /* @__PURE__ */ new Map();
+  stackSegments.forEach((segments, bucketKey) => {
+    segments.forEach((point) => {
+      const current = totals.get(point.bucketKey) ?? { negative: 0, positive: 0 };
+      if (point.value >= 0) {
+        current.positive += point.value;
+      } else {
+        current.negative += point.value;
+      }
+      totals.set(point.bucketKey, current);
+    });
+  });
+  if (totals.size === 0) {
+    return null;
+  }
+  let minValue = Math.min(...Array.from(totals.values(), (value) => value.negative));
+  let maxValue = Math.max(...Array.from(totals.values(), (value) => value.positive));
+  if (minValue >= 0) {
+    const padding2 = Math.max(maxValue * 0.06, maxValue === 0 ? 1 : 0);
+    return {
+      minValue: 0,
+      maxValue: maxValue + padding2
+    };
+  }
+  if (maxValue <= 0) {
+    const padding2 = Math.max(Math.abs(minValue) * 0.06, minValue === 0 ? 1 : 0);
+    return {
+      minValue: minValue - padding2,
+      maxValue: 0
+    };
+  }
+  const range = maxValue - minValue || 1;
+  const padding = range * 0.06;
+  return {
+    minValue: minValue - padding,
+    maxValue: maxValue + padding
+  };
+}
+function buildDailyPanel(rows, unitKey, unitLabel) {
+  const valuePrecision = maxPrecisionForRows(rows);
+  const seriesOrder = uniqueStrings(
+    rows.map((row) => row.metric?.key).filter((value) => typeof value === "string" && value.length > 0)
+  );
+  const bucketTimestamps = /* @__PURE__ */ new Map();
+  const stackSegments = /* @__PURE__ */ new Map();
+  rows.forEach((row) => {
+    const key = row.metric?.key;
+    const value = row.metric?.value;
+    if (typeof key !== "string" || typeof value !== "number" || !Number.isFinite(value)) {
+      return;
+    }
+    const bucketKey = rowDateValue(row);
+    if (typeof bucketKey !== "string" || bucketKey.length === 0) {
+      return;
+    }
+    const bucketTimestamp = startOfDayTimestamp(bucketKey);
+    if (bucketTimestamp === null) {
+      return;
+    }
+    bucketTimestamps.set(bucketKey, bucketTimestamp);
+    const segments = stackSegments.get(bucketKey) ?? [];
+    segments.push({
+      bucketKey,
+      key,
+      label: key,
+      precision: rawValuePrecision(row),
+      timestamp: rowTimestamp(row) ?? bucketTimestamp,
+      value
+    });
+    stackSegments.set(bucketKey, segments);
+  });
+  const buckets = Array.from(bucketTimestamps.entries()).sort((left, right) => (left[1] ?? Number.NEGATIVE_INFINITY) - (right[1] ?? Number.NEGATIVE_INFINITY)).map(([key, timestamp]) => ({
+    key,
+    label: key,
+    timestamp
+  }));
+  if (buckets.length === 0) {
+    return null;
+  }
+  stackSegments.forEach((segments) => {
+    segments.sort((left, right) => {
+      if (left.timestamp !== null && right.timestamp !== null && left.timestamp !== right.timestamp) {
+        return left.timestamp - right.timestamp;
+      }
+      return left.key.localeCompare(right.key);
+    });
+  });
+  const series = seriesOrder.map((key) => ({
+    key,
+    label: key,
+    points: []
+  }));
+  const valueRange = collectStackedValueRange(stackSegments);
+  if (!valueRange) {
+    return null;
+  }
+  return {
+    axisKind: "time",
+    axisPrecision: resolveAxisPrecision(valueRange.minValue, valueRange.maxValue, valuePrecision),
+    buckets,
+    kind: "bar",
+    maxValue: valueRange.maxValue,
+    minValue: valueRange.minValue,
+    series,
+    stackSegments,
+    stacked: true,
+    unitKey,
+    unitLabel
+  };
+}
+function buildTemporalPanel(rows, unitKey, unitLabel, bucketByDay) {
+  const valuePrecision = maxPrecisionForRows(rows);
+  const seriesOrder = uniqueStrings(
+    rows.map((row) => row.metric?.key).filter((value) => typeof value === "string" && value.length > 0)
+  );
+  const bucketTimestamps = /* @__PURE__ */ new Map();
+  const seriesPointMaps = /* @__PURE__ */ new Map();
+  rows.forEach((row) => {
+    const key = row.metric?.key;
+    const value = row.metric?.value;
+    if (typeof key !== "string" || typeof value !== "number" || !Number.isFinite(value)) {
+      return;
+    }
+    const timestamp = rowTimestamp(row);
+    const bucketKey = bucketByDay ? rowDateValue(row) : row.metric?.ts;
+    if (typeof bucketKey !== "string" || bucketKey.length === 0) {
+      return;
+    }
+    const bucketTimestamp = bucketByDay ? startOfDayTimestamp(bucketKey) : timestamp;
+    if (bucketTimestamp === null) {
+      return;
+    }
+    bucketTimestamps.set(bucketKey, bucketTimestamp);
+    const pointMap = seriesPointMaps.get(key) ?? /* @__PURE__ */ new Map();
+    const existing = pointMap.get(bucketKey);
+    if (!existing || (timestamp ?? bucketTimestamp) > (existing.timestamp ?? Number.NEGATIVE_INFINITY)) {
+      pointMap.set(bucketKey, {
+        bucketKey,
+        precision: rawValuePrecision(row),
+        timestamp: bucketTimestamp,
+        value
+      });
+      seriesPointMaps.set(key, pointMap);
+    }
+  });
+  const buckets = Array.from(bucketTimestamps.entries()).sort((left, right) => (left[1] ?? Number.NEGATIVE_INFINITY) - (right[1] ?? Number.NEGATIVE_INFINITY)).map(([key, timestamp]) => ({
+    key,
+    label: key,
+    timestamp
+  }));
+  if (buckets.length === 0) {
+    return null;
+  }
+  const series = seriesOrder.map((key) => {
+    const pointMap = seriesPointMaps.get(key);
+    if (!pointMap || pointMap.size === 0) {
+      return null;
+    }
+    return {
+      key,
+      label: key,
+      points: buckets.map((bucket) => pointMap.get(bucket.key)).filter((point) => point !== void 0)
+    };
+  }).filter((entry) => entry !== null);
+  const valueRange = collectValueRange(series);
+  if (!valueRange) {
+    return null;
+  }
+  return {
+    axisKind: "time",
+    axisPrecision: resolveAxisPrecision(valueRange.minValue, valueRange.maxValue, valuePrecision),
+    buckets,
+    kind: buckets.length >= 2 ? "line" : "bar",
+    maxValue: valueRange.maxValue,
+    minValue: valueRange.minValue,
+    series,
+    stackSegments: void 0,
+    stacked: false,
+    unitKey,
+    unitLabel
+  };
+}
+function buildSourcePanel(rows, unitKey, unitLabel) {
+  const valuePrecision = maxPrecisionForRows(rows);
+  const bucketKeys = uniqueStrings(
+    rows.map((row) => {
+      const source = row.metric?.source;
+      return typeof source === "string" && source.length > 0 ? source : "No source";
+    })
+  );
+  const seriesOrder = uniqueStrings(
+    rows.map((row) => row.metric?.key).filter((value) => typeof value === "string" && value.length > 0)
+  );
+  const pointMaps = /* @__PURE__ */ new Map();
+  rows.forEach((row) => {
+    const key = row.metric?.key;
+    const value = row.metric?.value;
+    if (typeof key !== "string" || typeof value !== "number" || !Number.isFinite(value)) {
+      return;
+    }
+    const source = typeof row.metric?.source === "string" && row.metric.source.length > 0 ? row.metric.source : "No source";
+    const pointMap = pointMaps.get(key) ?? /* @__PURE__ */ new Map();
+    if (!pointMap.has(source)) {
+      pointMap.set(source, {
+        bucketKey: source,
+        precision: rawValuePrecision(row),
+        timestamp: rowTimestamp(row),
+        value
+      });
+      pointMaps.set(key, pointMap);
+    }
+  });
+  const buckets = bucketKeys.map((key) => ({
+    key,
+    label: key,
+    timestamp: null
+  }));
+  const series = seriesOrder.map((key) => {
+    const pointMap = pointMaps.get(key);
+    if (!pointMap || pointMap.size === 0) {
+      return null;
+    }
+    return {
+      key,
+      label: key,
+      points: buckets.map((bucket) => pointMap.get(bucket.key)).filter((point) => point !== void 0)
+    };
+  }).filter((entry) => entry !== null);
+  const valueRange = collectValueRange(series);
+  if (!valueRange) {
+    return null;
+  }
+  return {
+    axisKind: "category",
+    axisPrecision: resolveAxisPrecision(valueRange.minValue, valueRange.maxValue, valuePrecision),
+    buckets,
+    kind: "bar",
+    maxValue: valueRange.maxValue,
+    minValue: valueRange.minValue,
+    series,
+    stackSegments: void 0,
+    stacked: false,
+    unitKey,
+    unitLabel
+  };
+}
+function buildKeyPanel(rows, unitKey, unitLabel) {
+  const valuePrecision = maxPrecisionForRows(rows);
+  const buckets = uniqueStrings(
+    rows.map((row) => {
+      const key = row.metric?.key;
+      return typeof key === "string" && key.length > 0 ? key : "No metric";
+    })
+  ).map((key) => ({
+    key,
+    label: key,
+    timestamp: null
+  }));
+  const pointMap = /* @__PURE__ */ new Map();
+  rows.forEach((row) => {
+    const key = row.metric?.key;
+    const value = row.metric?.value;
+    if (typeof key !== "string" || typeof value !== "number" || !Number.isFinite(value)) {
+      return;
+    }
+    if (!pointMap.has(key)) {
+      pointMap.set(key, {
+        bucketKey: key,
+        precision: rawValuePrecision(row),
+        timestamp: rowTimestamp(row),
+        value
+      });
+    }
+  });
+  const series = [
+    {
+      key: "value",
+      label: unitLabel ?? "Value",
+      points: buckets.map((bucket) => pointMap.get(bucket.key)).filter((point) => point !== void 0)
+    }
+  ];
+  const valueRange = collectValueRange(series);
+  if (!valueRange || series[0].points.length === 0) {
+    return null;
+  }
+  return {
+    axisKind: "category",
+    axisPrecision: resolveAxisPrecision(valueRange.minValue, valueRange.maxValue, valuePrecision),
+    buckets,
+    kind: "bar",
+    maxValue: valueRange.maxValue,
+    minValue: valueRange.minValue,
+    series,
+    stackSegments: void 0,
+    stacked: false,
+    unitKey,
+    unitLabel
+  };
+}
+function buildMetricsChartModel(rows, groupBy) {
+  const plottableRows = rows.filter(hasPlottableValue);
+  if (plottableRows.length === 0) {
+    return null;
+  }
+  const unitOrder = uniqueStrings(
+    plottableRows.map((row) => {
+      const unit = row.metric?.unit;
+      return typeof unit === "string" && unit.length > 0 ? unit : NO_UNIT_KEY;
+    })
+  );
+  const panels = unitOrder.map((unitKey) => {
+    const unitRows = plottableRows.filter((row) => {
+      const unit = row.metric?.unit;
+      return (typeof unit === "string" && unit.length > 0 ? unit : NO_UNIT_KEY) === unitKey;
+    });
+    const unitLabel = unitKey === NO_UNIT_KEY ? null : unitKey;
+    if (groupBy === "day") {
+      return buildDailyPanel(unitRows, unitKey, unitLabel);
+    }
+    if (groupBy === "source") {
+      return buildSourcePanel(unitRows, unitKey, unitLabel);
+    }
+    if (groupBy === "key") {
+      return buildKeyPanel(unitRows, unitKey, unitLabel);
+    }
+    const temporalPanel = buildTemporalPanel(unitRows, unitKey, unitLabel, false);
+    if (temporalPanel) {
+      return temporalPanel;
+    }
+    return buildKeyPanel(unitRows, unitKey, unitLabel);
+  }).filter((panel) => panel !== null);
+  if (panels.length === 0) {
+    return null;
+  }
+  return {
+    panelCount: panels.length,
+    panels,
+    pointCount: panels.reduce((total, panel) => {
+      if (panel.stacked && panel.stackSegments) {
+        return total + Array.from(panel.stackSegments.values()).reduce((count, segments) => count + segments.length, 0);
+      }
+      return total + panel.series.reduce((count, series) => count + series.points.length, 0);
+    }, 0)
+  };
+}
+
+// src/chart-renderer.ts
+var SVG_NS = "http://www.w3.org/2000/svg";
+var CHART_WIDTH = 640;
+var CHART_HEIGHT = 248;
+var PLOT_LEFT = 40;
+var PLOT_RIGHT = 12;
+var PLOT_TOP = 16;
+var PLOT_BOTTOM = 44;
+function createSvgEl(tagName, attributes) {
+  const element = document.createElementNS(SVG_NS, tagName);
+  if (attributes) {
+    Object.entries(attributes).forEach(([name, value]) => {
+      element.setAttribute(name, String(value));
+    });
+  }
+  return element;
+}
+function formatChartValue(value, decimals) {
+  return value.toLocaleString(void 0, {
+    maximumFractionDigits: decimals,
+    minimumFractionDigits: decimals
+  });
+}
+function formatBucketLabel(bucket, axisKind) {
+  if (axisKind === "time" && bucket.timestamp !== null) {
+    return bucket.label.length === 10 ? bucket.label : new Intl.DateTimeFormat(void 0, {
+      month: "short",
+      day: "numeric"
+    }).format(bucket.timestamp);
+  }
+  return bucket.label;
+}
+function formatBucketHeading(bucket, axisKind) {
+  if (axisKind !== "time" || bucket.timestamp === null) {
+    return bucket.label;
+  }
+  if (bucket.label.length === 10) {
+    return new Intl.DateTimeFormat(void 0, {
+      dateStyle: "full"
+    }).format(bucket.timestamp);
+  }
+  return new Intl.DateTimeFormat(void 0, {
+    dateStyle: "medium",
+    timeStyle: "short"
+  }).format(bucket.timestamp);
+}
+function formatSegmentTime(timestamp) {
+  if (timestamp === null) {
+    return null;
+  }
+  return new Intl.DateTimeFormat(void 0, {
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(timestamp);
+}
+function colorClass(index) {
+  return `metrics-lens-chart-series-${index % 6}`;
+}
+function nearlyEqual(left, right) {
+  return Math.abs(left - right) <= Math.max(1e-6, Math.abs(left), Math.abs(right)) * 1e-6;
+}
+function gridGuideValues(panel) {
+  const range = panel.maxValue - panel.minValue || 1;
+  return [panel.maxValue, 0.75, 0.5, 0.25, panel.minValue].map(
+    (value) => value > 0 && value < 1 ? panel.minValue + range * value : value
+  );
+}
+function visibleSeriesKeys(panel, state) {
+  if (state.isolatedSeriesKey) {
+    return panel.series.some((series) => series.key === state.isolatedSeriesKey) ? [state.isolatedSeriesKey] : [];
+  }
+  return panel.series.map((series) => series.key).filter((key) => !state.mutedSeriesKeys.has(key));
+}
+function visibleSeriesCount(panel, state) {
+  return visibleSeriesKeys(panel, state).length;
+}
+function filteredStackSegments(panel, visibleKeys) {
+  if (!panel.stackSegments) {
+    return void 0;
+  }
+  const filtered = /* @__PURE__ */ new Map();
+  panel.stackSegments.forEach((segments, bucketKey) => {
+    const visibleSegments = segments.filter((segment) => visibleKeys.has(segment.key));
+    if (visibleSegments.length > 0) {
+      filtered.set(bucketKey, visibleSegments);
+    }
+  });
+  return filtered;
+}
+function computeVisibleRange(panel, series, stackSegments) {
+  if (panel.stacked && stackSegments) {
+    const totals = Array.from(stackSegments.values()).map(
+      (segments) => segments.reduce(
+        (current, segment) => {
+          if (segment.value >= 0) {
+            current.positive += segment.value;
+          } else {
+            current.negative += segment.value;
+          }
+          return current;
+        },
+        { negative: 0, positive: 0 }
+      )
+    );
+    let minValue2 = Math.min(...totals.map((entry) => entry.negative), 0);
+    let maxValue2 = Math.max(...totals.map((entry) => entry.positive), 0);
+    const range2 = maxValue2 - minValue2 || 1;
+    if (minValue2 >= 0) {
+      minValue2 = 0;
+      maxValue2 += Math.max(maxValue2 * 0.06, maxValue2 === 0 ? 1 : 0);
+    } else if (maxValue2 <= 0) {
+      maxValue2 = 0;
+      minValue2 -= Math.max(Math.abs(minValue2) * 0.06, minValue2 === 0 ? 1 : 0);
+    } else {
+      const padding = range2 * 0.06;
+      minValue2 -= padding;
+      maxValue2 += padding;
+    }
+    return { maxValue: maxValue2, minValue: minValue2 };
+  }
+  const values = series.flatMap((entry) => entry.points.map((point) => point.value));
+  if (values.length === 0) {
+    return {
+      maxValue: panel.maxValue,
+      minValue: panel.minValue
+    };
+  }
+  let minValue = Math.min(...values);
+  let maxValue = Math.max(...values);
+  const range = maxValue - minValue;
+  if (range === 0) {
+    if (maxValue === 0) {
+      minValue = -1;
+      maxValue = 1;
+    } else {
+      const padding = Math.abs(maxValue) * 0.1;
+      minValue -= padding;
+      maxValue += padding;
+    }
+  } else {
+    const padding = range * 0.06;
+    minValue -= padding;
+    maxValue += padding;
+  }
+  return { maxValue, minValue };
+}
+function displayPanel(panel, state) {
+  const visibleKeys = new Set(visibleSeriesKeys(panel, state));
+  const series = panel.series.filter((entry) => visibleKeys.has(entry.key));
+  const stackSegments = filteredStackSegments(panel, visibleKeys);
+  const range = computeVisibleRange(panel, series, stackSegments);
+  return {
+    ...panel,
+    maxValue: range.maxValue,
+    minValue: range.minValue,
+    series,
+    stackSegments
+  };
+}
+function colorClassBySeriesKey(panel) {
+  return new Map(panel.series.map((series, index) => [series.key, colorClass(index)]));
+}
+function selectXAxisLabels(buckets, maxLabels, xForBucket) {
+  if (buckets.length <= maxLabels) {
+    return buckets.map((bucket, index) => ({ bucket, index, x: xForBucket(bucket, index) }));
+  }
+  const selections = [];
+  const span = Math.max(1, maxLabels - 1);
+  const step = Math.ceil((buckets.length - 1) / span);
+  buckets.forEach((bucket, index) => {
+    if (index === 0 || index === buckets.length - 1 || index % step === 0) {
+      selections.push({ bucket, index, x: xForBucket(bucket, index) });
+    }
+  });
+  return selections;
+}
+function xAxisLayout(panel, panelWidth, xForBucket) {
+  const availableWidth = Math.max(180, panelWidth - 52);
+  const targetSpacing = panel.axisKind === "time" ? 88 : 72;
+  const maxLabels = Math.max(2, Math.floor(availableWidth / targetSpacing));
+  return {
+    labels: selectXAxisLabels(panel.buckets, maxLabels, xForBucket),
+    rotate: false
+  };
+}
+function appendYAxis(svg, panel) {
+  const plotWidth = CHART_WIDTH - PLOT_LEFT - PLOT_RIGHT;
+  const plotHeight = CHART_HEIGHT - PLOT_TOP - PLOT_BOTTOM;
+  const domainMin = panel.minValue;
+  const domainMax = panel.maxValue;
+  const range = domainMax - domainMin || 1;
+  const yForValue = (value) => {
+    const ratio = (value - domainMin) / range;
+    return PLOT_TOP + plotHeight - ratio * plotHeight;
+  };
+  const baselineValue = domainMin <= 0 && domainMax >= 0 ? 0 : domainMin > 0 ? domainMin : domainMax;
+  const gridValues = gridGuideValues(panel);
+  let baselineRendered = false;
+  gridValues.forEach((value, index) => {
+    const y = yForValue(value);
+    const isMinor = index !== 0 && index !== gridValues.length - 1;
+    const isBaseline = nearlyEqual(value, baselineValue);
+    if (isBaseline) {
+      baselineRendered = true;
+    }
+    svg.appendChild(
+      createSvgEl("line", {
+        class: [
+          "metrics-lens-chart-grid",
+          isMinor ? "is-minor" : "",
+          isBaseline ? "metrics-lens-chart-baseline" : ""
+        ].filter((value2) => value2.length > 0).join(" "),
+        x1: PLOT_LEFT,
+        x2: PLOT_LEFT + plotWidth,
+        y1: y,
+        y2: y
+      })
+    );
+    const label = createSvgEl("text", {
+      class: ["metrics-lens-chart-axis-label", isMinor ? "is-minor" : ""].filter((entry) => entry.length > 0).join(" "),
+      x: PLOT_LEFT - 8,
+      y: y + 4
+    });
+    label.textContent = formatChartValue(value, panel.axisPrecision);
+    svg.appendChild(label);
+  });
+  const zeroY = yForValue(baselineValue);
+  if (!baselineRendered) {
+    svg.appendChild(
+      createSvgEl("line", {
+        class: "metrics-lens-chart-baseline",
+        x1: PLOT_LEFT,
+        x2: PLOT_LEFT + plotWidth,
+        y1: zeroY,
+        y2: zeroY
+      })
+    );
+  }
+  return { baselineValue, plotHeight, plotWidth, zeroY, yForValue };
+}
+function appendBarChartGuideOverlay(svg, panel, plotWidth, yForValue, baselineValue) {
+  gridGuideValues(panel).forEach((value, index, allValues) => {
+    const isMinor = index !== 0 && index !== allValues.length - 1;
+    if (isMinor) {
+      return;
+    }
+    const isBaseline = nearlyEqual(value, baselineValue);
+    svg.appendChild(
+      createSvgEl("line", {
+        class: [
+          "metrics-lens-chart-grid",
+          "is-overlay",
+          isBaseline ? "metrics-lens-chart-baseline" : ""
+        ].filter((entry) => entry.length > 0).join(" "),
+        x1: PLOT_LEFT,
+        x2: PLOT_LEFT + plotWidth,
+        y1: yForValue(value),
+        y2: yForValue(value)
+      })
+    );
+  });
+}
+function appendXAxisLabels(svg, layout, axisKind) {
+  layout.labels.forEach(({ bucket, x }) => {
+    const y = CHART_HEIGHT - 10;
+    const label = createSvgEl("text", {
+      class: ["metrics-lens-chart-axis-label", "is-bottom"].join(" "),
+      x,
+      y
+    });
+    label.textContent = formatBucketLabel(bucket, axisKind);
+    svg.appendChild(label);
+  });
+}
+function lineHoverTargets(panel, xForTimestamp, visibleKeys, colorClasses) {
+  const positions = panel.buckets.map((bucket) => xForTimestamp(bucket.timestamp));
+  return panel.buckets.map((bucket, index) => {
+    const entries = panel.series.filter((series) => visibleKeys.has(series.key)).map((series) => {
+      const point = series.points.find((entry) => entry.bucketKey === bucket.key);
+      if (!point) {
+        return null;
+      }
+      return {
+        colorClass: colorClasses.get(series.key) ?? colorClass(0),
+        label: series.label,
+        precision: point.precision,
+        value: point.value
+      };
+    }).filter((entry) => entry !== null);
+    if (entries.length === 0) {
+      return null;
+    }
+    const x = positions[index];
+    const xStart = index === 0 ? PLOT_LEFT : (positions[index - 1] + x) / 2;
+    const xEnd = index === positions.length - 1 ? PLOT_LEFT + (CHART_WIDTH - PLOT_LEFT - PLOT_RIGHT) : (x + positions[index + 1]) / 2;
+    return {
+      bucket,
+      entries,
+      x,
+      xEnd,
+      xStart
+    };
+  }).filter((entry) => entry !== null);
+}
+function barHoverTargets(panel, bucketWidth, visibleKeys, colorClasses) {
+  return panel.buckets.map((bucket, index) => {
+    const xStart = PLOT_LEFT + index * bucketWidth;
+    const xEnd = xStart + bucketWidth;
+    const x = xStart + bucketWidth / 2;
+    if (panel.stacked && panel.stackSegments) {
+      const segments = (panel.stackSegments.get(bucket.key) ?? []).filter((segment) => visibleKeys.has(segment.key));
+      if (segments.length === 0) {
+        return null;
+      }
+      const duplicateCounts = /* @__PURE__ */ new Map();
+      segments.forEach((segment) => {
+        duplicateCounts.set(segment.key, (duplicateCounts.get(segment.key) ?? 0) + 1);
+      });
+      return {
+        bucket,
+        entries: segments.map((segment) => {
+          const timeLabel = duplicateCounts.get(segment.key) > 1 ? formatSegmentTime(segment.timestamp) : null;
+          return {
+            colorClass: colorClasses.get(segment.key) ?? colorClass(0),
+            label: timeLabel ? `${segment.label} ${timeLabel}` : segment.label,
+            precision: segment.precision,
+            value: segment.value
+          };
+        }),
+        x,
+        xEnd,
+        xStart
+      };
+    }
+    const entries = panel.series.filter((series) => visibleKeys.has(series.key)).map((series) => {
+      const point = series.points.find((entry) => entry.bucketKey === bucket.key);
+      if (!point) {
+        return null;
+      }
+      return {
+        colorClass: colorClasses.get(series.key) ?? colorClass(0),
+        label: series.label,
+        precision: point.precision,
+        value: point.value
+      };
+    }).filter((entry) => entry !== null);
+    if (entries.length === 0) {
+      return null;
+    }
+    return {
+      bucket,
+      entries,
+      x,
+      xEnd,
+      xStart
+    };
+  }).filter((entry) => entry !== null);
+}
+function renderTooltip(tooltipEl, panel, target) {
+  tooltipEl.empty();
+  if (!target) {
+    tooltipEl.removeClass("is-visible");
+    return;
+  }
+  tooltipEl.addClass("is-visible");
+  tooltipEl.createDiv({
+    cls: "metrics-lens-chart-tooltip-title",
+    text: formatBucketHeading(target.bucket, panel.axisKind)
+  });
+  target.entries.forEach((entry) => {
+    const row = tooltipEl.createDiv({ cls: "metrics-lens-chart-tooltip-row" });
+    row.createSpan({
+      cls: ["metrics-lens-chart-tooltip-swatch", entry.colorClass]
+    });
+    row.createSpan({
+      cls: "metrics-lens-chart-tooltip-label",
+      text: entry.label
+    });
+    row.createSpan({
+      cls: "metrics-lens-chart-tooltip-value",
+      text: formatChartValue(entry.value, entry.precision)
+    });
+  });
+}
+function attachHoverTargets(panelEl, svg, panel, targets) {
+  if (targets.length === 0) {
+    return;
+  }
+  const tooltipEl = panelEl.createDiv({ cls: "metrics-lens-chart-tooltip" });
+  const crosshair = createSvgEl("line", {
+    class: "metrics-lens-chart-crosshair",
+    x1: 0,
+    x2: 0,
+    y1: PLOT_TOP,
+    y2: CHART_HEIGHT - PLOT_BOTTOM
+  });
+  svg.appendChild(crosshair);
+  const overlay = createSvgEl("g");
+  const showTarget = (target) => {
+    crosshair.setAttribute("x1", String(target.x));
+    crosshair.setAttribute("x2", String(target.x));
+    crosshair.addClass("is-visible");
+    renderTooltip(tooltipEl, panel, target);
+    const panelBounds = panelEl.getBoundingClientRect();
+    const svgBounds = svg.getBoundingClientRect();
+    const tooltipWidth = tooltipEl.getBoundingClientRect().width || 180;
+    const panelWidth = panelBounds.width || CHART_WIDTH;
+    const svgWidth = svgBounds.width || panelWidth;
+    const targetPx = target.x / CHART_WIDTH * svgWidth + (svgBounds.left - panelBounds.left);
+    const anchorGap = -4;
+    const preferredLeft = targetPx > panelWidth / 2 ? targetPx - tooltipWidth - anchorGap : targetPx + anchorGap;
+    const clampedLeft = Math.max(0, Math.min(panelWidth - tooltipWidth, preferredLeft));
+    tooltipEl.style.left = `${clampedLeft}px`;
+  };
+  const hideTarget = () => {
+    crosshair.removeClass("is-visible");
+    renderTooltip(tooltipEl, panel, null);
+  };
+  targets.forEach((target) => {
+    const region = createSvgEl("rect", {
+      class: "metrics-lens-chart-hover-region",
+      height: CHART_HEIGHT - PLOT_BOTTOM - PLOT_TOP,
+      width: target.xEnd - target.xStart,
+      x: target.xStart,
+      y: PLOT_TOP
+    });
+    region.addEventListener("mouseenter", () => {
+      showTarget(target);
+    });
+    region.addEventListener("mousemove", () => {
+      showTarget(target);
+    });
+    region.addEventListener("mouseleave", () => {
+      hideTarget();
+    });
+    overlay.appendChild(region);
+  });
+  svg.appendChild(overlay);
+  panelEl.onmouseleave = () => {
+    hideTarget();
+  };
+}
+function renderLineChart(svg, panel, panelWidth) {
+  const { plotWidth, yForValue } = appendYAxis(svg, panel);
+  const timestamps = panel.buckets.map((bucket) => bucket.timestamp).filter((value) => typeof value === "number");
+  const minTimestamp = Math.min(...timestamps);
+  const maxTimestamp = Math.max(...timestamps);
+  const timeRange = maxTimestamp - minTimestamp || 1;
+  const xForTimestamp = (timestamp) => PLOT_LEFT + (timestamp - minTimestamp) / timeRange * plotWidth;
+  const colorClasses = colorClassBySeriesKey(panel);
+  const visibleKeys = new Set(panel.series.map((series) => series.key));
+  panel.series.forEach((series, index) => {
+    if (series.points.length === 0) {
+      return;
+    }
+    const pathData = series.points.filter((point) => point.timestamp !== null).map((point, pointIndex) => {
+      const x = xForTimestamp(point.timestamp);
+      const y = yForValue(point.value);
+      return `${pointIndex === 0 ? "M" : "L"} ${x} ${y}`;
+    }).join(" ");
+    if (pathData.length > 0) {
+      svg.appendChild(
+        createSvgEl("path", {
+          class: `metrics-lens-chart-line ${colorClass(index)}`,
+          d: pathData
+        })
+      );
+    }
+    series.points.forEach((point) => {
+      if (point.timestamp === null) {
+        return;
+      }
+      svg.appendChild(
+        createSvgEl("circle", {
+          class: `metrics-lens-chart-point ${colorClass(index)}`,
+          cx: xForTimestamp(point.timestamp),
+          cy: yForValue(point.value),
+          r: 3
+        })
+      );
+    });
+  });
+  const layout = xAxisLayout(panel, panelWidth, (bucket) => xForTimestamp(bucket.timestamp));
+  appendXAxisLabels(svg, layout, panel.axisKind);
+  const targets = lineHoverTargets(panel, xForTimestamp, visibleKeys, colorClasses);
+  attachHoverTargets(svg.parentElement, svg, panel, targets);
+}
+function renderBarChart(svg, panel, panelWidth) {
+  const { baselineValue, plotWidth, zeroY, yForValue } = appendYAxis(svg, panel);
+  const seriesCount = Math.max(panel.series.length, 1);
+  const bucketWidth = plotWidth / Math.max(panel.buckets.length, 1);
+  const groupWidth = bucketWidth * 0.7;
+  const barWidth = Math.max(groupWidth / seriesCount, 8);
+  const colorClasses = colorClassBySeriesKey(panel);
+  const visibleKeys = new Set(panel.series.map((series) => series.key));
+  panel.buckets.forEach((bucket, bucketIndex) => {
+    const groupStart = PLOT_LEFT + bucketIndex * bucketWidth + (bucketWidth - groupWidth) / 2;
+    if (panel.stacked) {
+      const segments = panel.stackSegments?.get(bucket.key) ?? [];
+      let positiveTotal = 0;
+      let negativeTotal = 0;
+      segments.forEach((segment) => {
+        const startValue = segment.value >= 0 ? positiveTotal : negativeTotal;
+        const endValue = startValue + segment.value;
+        if (segment.value >= 0) {
+          positiveTotal = endValue;
+        } else {
+          negativeTotal = endValue;
+        }
+        const startY = yForValue(startValue);
+        const endY = yForValue(endValue);
+        svg.appendChild(
+          createSvgEl("rect", {
+            class: `metrics-lens-chart-bar is-stacked ${colorClasses.get(segment.key) ?? colorClass(0)}`,
+            height: Math.abs(startY - endY),
+            rx: 2,
+            ry: 2,
+            width: groupWidth,
+            x: groupStart,
+            y: Math.min(startY, endY)
+          })
+        );
+      });
+      return;
+    }
+    panel.series.forEach((series, seriesIndex) => {
+      const point = series.points.find((entry) => entry.bucketKey === bucket.key);
+      if (!point) {
+        return;
+      }
+      const y = yForValue(point.value);
+      svg.appendChild(
+        createSvgEl("rect", {
+          class: `metrics-lens-chart-bar ${colorClass(seriesIndex)}`,
+          height: Math.abs(zeroY - y),
+          rx: 2,
+          ry: 2,
+          width: barWidth,
+          x: groupStart + seriesIndex * barWidth,
+          y: Math.min(y, zeroY)
+        })
+      );
+    });
+  });
+  appendBarChartGuideOverlay(svg, panel, plotWidth, yForValue, baselineValue);
+  const layout = xAxisLayout(panel, panelWidth, (_bucket, index) => PLOT_LEFT + index * bucketWidth + bucketWidth / 2);
+  appendXAxisLabels(svg, layout, panel.axisKind);
+  const targets = barHoverTargets(panel, bucketWidth, visibleKeys, colorClasses);
+  attachHoverTargets(svg.parentElement, svg, panel, targets);
+}
+function renderLegend(container, panel, state, onChange) {
+  container.empty();
+  if (panel.series.length <= 1) {
+    return;
+  }
+  panel.series.forEach((entry, index) => {
+    const item = container.createDiv({ cls: "metrics-lens-chart-legend-item" });
+    const isMuted = state.mutedSeriesKeys.has(entry.key);
+    const isIsolated = state.isolatedSeriesKey === entry.key;
+    const hasIsolation = state.isolatedSeriesKey !== null;
+    item.toggleClass("is-muted", isMuted);
+    item.toggleClass("is-isolated", isIsolated);
+    item.toggleClass("is-dimmed", hasIsolation && !isIsolated);
+    item.setAttribute("role", "button");
+    item.tabIndex = 0;
+    item.ariaLabel = "Click to isolate. Shift-click to mute.";
+    item.createSpan({
+      cls: ["metrics-lens-chart-legend-swatch", colorClass(index)]
+    });
+    item.createSpan({
+      cls: "metrics-lens-chart-legend-label",
+      text: entry.label
+    });
+    const toggleMute = () => {
+      if (state.mutedSeriesKeys.has(entry.key)) {
+        state.mutedSeriesKeys.delete(entry.key);
+        onChange();
+        return;
+      }
+      if (visibleSeriesCount(panel, state) <= 1) {
+        return;
+      }
+      state.mutedSeriesKeys.add(entry.key);
+      if (state.isolatedSeriesKey === entry.key) {
+        state.isolatedSeriesKey = null;
+      }
+      onChange();
+    };
+    item.addEventListener("click", (event) => {
+      if (event.shiftKey) {
+        toggleMute();
+        return;
+      }
+      if (state.isolatedSeriesKey === entry.key) {
+        state.isolatedSeriesKey = null;
+      } else {
+        state.isolatedSeriesKey = entry.key;
+        state.mutedSeriesKeys.delete(entry.key);
+      }
+      onChange();
+    });
+    item.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") {
+        return;
+      }
+      event.preventDefault();
+      if (event.shiftKey) {
+        toggleMute();
+        return;
+      }
+      if (state.isolatedSeriesKey === entry.key) {
+        state.isolatedSeriesKey = null;
+      } else {
+        state.isolatedSeriesKey = entry.key;
+        state.mutedSeriesKeys.delete(entry.key);
+      }
+      onChange();
+    });
+  });
+}
+function chartPanelTitle(panel) {
+  const seriesLabels = panel.series.map((entry) => entry.label);
+  if (panel.unitLabel && seriesLabels.length === 1) {
+    return `${seriesLabels[0]} (${panel.unitLabel})`;
+  }
+  if (panel.unitLabel && seriesLabels.length > 1) {
+    return `${panel.unitLabel}: ${seriesLabels.join(", ")}`;
+  }
+  if (seriesLabels.length === 1) {
+    return seriesLabels[0];
+  }
+  return seriesLabels.join(", ");
+}
+function renderPanel(container, panel, model) {
+  const panelEl = container.createDiv({ cls: "metrics-lens-chart-panel" });
+  if (model.panelCount > 1) {
+    panelEl.createEl("p", {
+      cls: "metrics-lens-chart-panel-title",
+      text: chartPanelTitle(panel)
+    });
+  }
+  const legendEl = panelEl.createDiv({ cls: "metrics-lens-chart-legend" });
+  const state = {
+    isolatedSeriesKey: null,
+    mutedSeriesKeys: /* @__PURE__ */ new Set()
+  };
+  const renderCurrentPanel = () => {
+    const current = displayPanel(panel, state);
+    legendEl.empty();
+    renderLegend(legendEl, panel, state, renderCurrentPanel);
+    const existingSvg = panelEl.querySelector(".metrics-lens-chart-svg");
+    const existingTooltip = panelEl.querySelector(".metrics-lens-chart-tooltip");
+    existingSvg?.remove();
+    existingTooltip?.remove();
+    const svg = createSvgEl("svg", {
+      class: "metrics-lens-chart-svg",
+      viewBox: `0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`
+    });
+    svg.setAttribute("aria-label", "Metrics chart");
+    svg.setAttribute("role", "img");
+    panelEl.appendChild(svg);
+    const panelWidth = panelEl.getBoundingClientRect().width || CHART_WIDTH;
+    if (current.kind === "line") {
+      renderLineChart(svg, current, panelWidth);
+    } else {
+      renderBarChart(svg, current, panelWidth);
+    }
+  };
+  renderCurrentPanel();
+}
+function renderMetricsChart(container, model) {
+  const chartSection = container.createDiv({ cls: ["metrics-lens-section", "metrics-lens-chart"] });
+  const panels = chartSection.createDiv({ cls: "metrics-lens-chart-panels" });
+  model.panels.forEach((panel) => {
+    renderPanel(panels, panel, model);
+  });
+}
+
 // src/metric-icons.ts
 var import_obsidian4 = require("obsidian");
 var cachedIconIds = null;
@@ -1178,7 +2301,7 @@ function formatMetricValue(row) {
   }
   return typeof unit === "string" ? `${value} ${unit}` : `${value}`;
 }
-function rowTimestamp(row) {
+function rowTimestamp2(row) {
   const ts = row.metric?.ts;
   if (typeof ts !== "string") {
     return null;
@@ -1186,7 +2309,7 @@ function rowTimestamp(row) {
   const parsed = Date.parse(ts);
   return Number.isNaN(parsed) ? null : parsed;
 }
-function rowDateValue(row) {
+function rowDateValue2(row) {
   if (typeof row.metric?.date === "string" && row.metric.date.length === 10) {
     return row.metric.date;
   }
@@ -1313,7 +2436,7 @@ function applyMetricsViewState(rows, viewState) {
     if (viewState.status !== "all" && row.status !== viewState.status) {
       return false;
     }
-    const rowDate = rowDateValue(row);
+    const rowDate = rowDateValue2(row);
     if (fromDate && (!rowDate || rowDate < fromDate)) {
       return false;
     }
@@ -1327,8 +2450,8 @@ function applyMetricsViewState(rows, viewState) {
   });
   return [...filteredRows].sort((left, right) => {
     if (viewState.sortOrder === "newest") {
-      const leftTimestamp = rowTimestamp(left);
-      const rightTimestamp = rowTimestamp(right);
+      const leftTimestamp = rowTimestamp2(left);
+      const rightTimestamp = rowTimestamp2(right);
       if (leftTimestamp !== null && rightTimestamp !== null && leftTimestamp !== rightTimestamp) {
         return rightTimestamp - leftTimestamp;
       }
@@ -1341,8 +2464,8 @@ function applyMetricsViewState(rows, viewState) {
       return right.lineNumber - left.lineNumber;
     }
     if (viewState.sortOrder === "oldest") {
-      const leftTimestamp = rowTimestamp(left);
-      const rightTimestamp = rowTimestamp(right);
+      const leftTimestamp = rowTimestamp2(left);
+      const rightTimestamp = rowTimestamp2(right);
       if (leftTimestamp !== null && rightTimestamp !== null && leftTimestamp !== rightTimestamp) {
         return leftTimestamp - rightTimestamp;
       }
@@ -1376,7 +2499,7 @@ function hasActiveViewControls(viewState) {
   return hasActivePrimaryControls(viewState) || advancedControlCount(viewState) > 0;
 }
 function hasActivePrimaryControls(viewState) {
-  return hasActiveTimeRange(viewState) || viewState.key.length > 0 || viewState.searchText.trim().length > 0 || viewState.sortOrder !== DEFAULT_VIEW_STATE.sortOrder;
+  return hasActiveTimeRange(viewState) || viewState.key.length > 0 || viewState.searchText.trim().length > 0 || viewState.showChart !== DEFAULT_VIEW_STATE.showChart || viewState.sortOrder !== DEFAULT_VIEW_STATE.sortOrder;
 }
 function hasActiveTimeRange(viewState) {
   if (viewState.timeRange === "all") {
@@ -1403,7 +2526,7 @@ function advancedControlCount(viewState) {
 function groupRowsByDay(rows) {
   const groups = /* @__PURE__ */ new Map();
   rows.forEach((row) => {
-    const day = rowDateValue(row);
+    const day = rowDateValue2(row);
     const key = day ?? "__no_date__";
     const current = groups.get(key) ?? [];
     current.push(row);
@@ -1681,10 +2804,13 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
   plugin;
   allowNoFile = true;
   advancedControlsExpanded = false;
+  addRecordActionEl = null;
+  chartActionEl = null;
   clearTargetedRecordTimeout = null;
   pendingControlFocus = null;
   pendingMetricIdFocus = null;
   viewState = createDefaultViewState();
+  viewActionSeparatorEl = null;
   viewStateFilePath = null;
   getViewType() {
     return METRICS_VIEW_TYPE;
@@ -1701,13 +2827,7 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
   }
   async onOpen() {
     this.contentEl.classList.add("metrics-lens-view-root");
-    this.addAction("plus", "Add record", () => {
-      if (!this.file) {
-        new import_obsidian5.Notice("Open a metrics file first.");
-        return;
-      }
-      this.plugin.openCreateRecordModal(this.file);
-    });
+    this.ensureHeaderActions();
     this.render();
   }
   async onClose() {
@@ -1738,10 +2858,56 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
     if (this.file) {
       this.viewStateFilePath = this.file.path;
     }
+    const showChart = this.viewState.showChart;
     this.viewState = createDefaultViewState();
+    this.viewState.showChart = showChart;
     this.advancedControlsExpanded = false;
     this.pendingMetricIdFocus = metricId;
     this.render();
+  }
+  ensureHeaderActions() {
+    if (!this.chartActionEl) {
+      this.chartActionEl = this.addAction("chart-line", "Show chart", () => {
+        if (!this.file) {
+          new import_obsidian5.Notice("Open a metrics file first.");
+          return;
+        }
+        this.viewState.showChart = !this.viewState.showChart;
+        this.persistCurrentViewState();
+        this.render();
+      });
+    }
+    if (!this.addRecordActionEl) {
+      this.addRecordActionEl = this.addAction("plus", "Add record", () => {
+        if (!this.file) {
+          new import_obsidian5.Notice("Open a metrics file first.");
+          return;
+        }
+        this.plugin.openCreateRecordModal(this.file);
+      });
+    }
+    if (this.addRecordActionEl?.parentElement && !this.viewActionSeparatorEl) {
+      const separator = this.addRecordActionEl.parentElement.createDiv({
+        cls: "metrics-lens-view-action-separator"
+      });
+      this.addRecordActionEl.parentElement.insertBefore(separator, this.addRecordActionEl);
+      this.viewActionSeparatorEl = separator;
+    }
+    this.syncHeaderActions();
+  }
+  syncHeaderActions() {
+    if (this.chartActionEl) {
+      this.chartActionEl.toggleClass("is-active", this.viewState.showChart);
+      this.chartActionEl.setAttribute(
+        "aria-label",
+        this.viewState.showChart ? "Hide chart" : "Show chart"
+      );
+      this.chartActionEl.setAttribute("data-tooltip-position", "bottom");
+    }
+    if (this.addRecordActionEl) {
+      this.addRecordActionEl.setAttribute("aria-label", "Add record");
+      this.addRecordActionEl.setAttribute("data-tooltip-position", "bottom");
+    }
   }
   persistCurrentViewState() {
     this.plugin.persistViewState(this.viewStateFilePath, this.viewState, this.advancedControlsExpanded);
@@ -1750,6 +2916,16 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
     this.viewState = createDefaultViewState();
     this.advancedControlsExpanded = false;
     this.plugin.resetPersistedViewState(this.viewStateFilePath);
+  }
+  renderChart(container, visibleRows) {
+    if (!this.viewState.showChart || visibleRows.length === 0) {
+      return;
+    }
+    const chartModel = buildMetricsChartModel(visibleRows, this.viewState.groupBy);
+    if (!chartModel) {
+      return;
+    }
+    renderMetricsChart(container, chartModel);
   }
   render() {
     this.contentEl.empty();
@@ -1783,6 +2959,8 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
     }
     const visibleRows = applyMetricsViewState(analysis.rows, this.viewState);
     const hasActiveControls = hasActiveViewControls(this.viewState);
+    this.syncHeaderActions();
+    this.renderChart(container, visibleRows);
     if (analysis.rows.length > 0 || hasActiveControls) {
       this.renderControls(container, availableKeys, availableSources);
     }

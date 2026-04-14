@@ -51,6 +51,240 @@
   color: var(--text-accent);
 }
 
+.metrics-lens-view-action-separator {
+  width: 1px;
+  height: var(--icon-size);
+  margin: 0 var(--size-2-2);
+  background-color: var(--background-modifier-border);
+  align-self: center;
+}
+
+.metrics-lens-chart-placeholder {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.metrics-lens-chart-panels {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-3);
+}
+
+.metrics-lens-chart-panel-title {
+  margin: 0 0 var(--size-2-2);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-medium);
+}
+
+.metrics-lens-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-2-2) var(--size-4-2);
+  margin-bottom: var(--size-2-2);
+}
+
+.metrics-lens-chart-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-2-1);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: var(--font-ui-smaller);
+  transition: opacity 80ms ease, color 80ms ease;
+}
+
+.metrics-lens-chart-legend-item.is-dimmed,
+.metrics-lens-chart-legend-item.is-muted {
+  opacity: 0.45;
+}
+
+.metrics-lens-chart-legend-item.is-isolated {
+  color: var(--text-normal);
+}
+
+.metrics-lens-chart-legend-swatch {
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 999px;
+  display: inline-block;
+  background-color: var(--metrics-lens-series-color);
+}
+
+.metrics-lens-chart-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+.metrics-lens-chart-panel {
+  position: relative;
+}
+
+.metrics-lens-chart-grid {
+  stroke: var(--background-modifier-border);
+  stroke-opacity: 0.45;
+  stroke-width: 1;
+}
+
+.metrics-lens-chart-grid.is-minor {
+  stroke-opacity: 0.2;
+}
+
+.metrics-lens-chart-grid.is-overlay {
+  stroke-opacity: 0.32;
+}
+
+.metrics-lens-chart-grid.is-overlay.is-minor {
+  stroke-opacity: 0.18;
+}
+
+.metrics-lens-chart-baseline {
+  stroke: var(--text-faint);
+  stroke-opacity: 0.4;
+  stroke-width: 1;
+}
+
+.metrics-lens-chart-axis-label {
+  fill: var(--text-muted);
+  font-size: 12px;
+  text-anchor: end;
+}
+
+.metrics-lens-chart-axis-label.is-minor {
+  fill: var(--text-faint);
+}
+
+.metrics-lens-chart-axis-label.is-bottom {
+  text-anchor: middle;
+}
+
+.metrics-lens-chart-axis-label.is-bottom.is-rotated {
+  text-anchor: end;
+}
+
+.metrics-lens-chart-line {
+  fill: none;
+  stroke: var(--metrics-lens-series-color);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.metrics-lens-chart-point {
+  fill: var(--background-primary);
+  stroke: var(--metrics-lens-series-color);
+  stroke-width: 2;
+}
+
+.metrics-lens-chart-bar {
+  fill: var(--metrics-lens-series-color);
+}
+
+.metrics-lens-chart-bar.is-stacked {
+  stroke: var(--background-primary);
+  stroke-width: 1;
+}
+
+.metrics-lens-chart-crosshair {
+  opacity: 0;
+  pointer-events: none;
+  stroke: var(--text-faint);
+  stroke-dasharray: 3 3;
+  stroke-width: 1;
+}
+
+.metrics-lens-chart-crosshair.is-visible {
+  opacity: 1;
+}
+
+.metrics-lens-chart-hover-region {
+  cursor: crosshair;
+  fill: transparent;
+}
+
+.metrics-lens-chart-tooltip {
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  box-shadow: var(--shadow-s);
+  font-size: var(--font-ui-smaller);
+  left: 0;
+  max-width: 18rem;
+  min-width: 15rem;
+  opacity: 0;
+  padding: var(--size-4-2) var(--size-4-3);
+  pointer-events: none;
+  position: absolute;
+  top: var(--size-2-2);
+  transition: opacity 80ms ease;
+  z-index: 2;
+}
+
+.metrics-lens-chart-tooltip.is-visible {
+  opacity: 1;
+}
+
+.metrics-lens-chart-tooltip-title {
+  color: var(--text-normal);
+  font-weight: var(--font-medium);
+  line-height: 1.3;
+  margin-bottom: var(--size-3-1);
+}
+
+.metrics-lens-chart-tooltip-row {
+  align-items: center;
+  color: var(--text-muted);
+  display: grid;
+  gap: var(--size-2-3);
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  line-height: 1.35;
+}
+
+.metrics-lens-chart-tooltip-row + .metrics-lens-chart-tooltip-row {
+  margin-top: var(--size-2-2);
+}
+
+.metrics-lens-chart-tooltip-swatch {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  display: inline-block;
+  background-color: var(--metrics-lens-series-color);
+}
+
+.metrics-lens-chart-tooltip-value {
+  color: var(--text-normal);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.metrics-lens-chart-series-0 {
+  --metrics-lens-series-color: var(--text-accent);
+}
+
+.metrics-lens-chart-series-1 {
+  --metrics-lens-series-color: var(--color-cyan, #3aa4a4);
+}
+
+.metrics-lens-chart-series-2 {
+  --metrics-lens-series-color: var(--color-orange, #d6803b);
+}
+
+.metrics-lens-chart-series-3 {
+  --metrics-lens-series-color: var(--color-green, #4f9e65);
+}
+
+.metrics-lens-chart-series-4 {
+  --metrics-lens-series-color: var(--color-red, #c95b5b);
+}
+
+.metrics-lens-chart-series-5 {
+  --metrics-lens-series-color: var(--color-purple, #8a70ff);
+}
+
 .metrics-lens-group + .metrics-lens-group {
   margin-top: var(--size-4-5);
 }

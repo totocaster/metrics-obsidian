@@ -17,6 +17,7 @@ export interface MetricsViewState {
   groupBy: MetricsGroupBy;
   key: string;
   searchText: string;
+  showChart: boolean;
   sortOrder: MetricsSortOrder;
   source: string;
   status: MetricsStatusFilter;
@@ -34,6 +35,7 @@ export const DEFAULT_VIEW_STATE: MetricsViewState = {
   groupBy: "none",
   key: "",
   searchText: "",
+  showChart: false,
   sortOrder: "newest",
   source: "",
   status: "all",
@@ -85,6 +87,7 @@ export function normalizeMetricsViewState(
     groupBy: normalizeGroupBy(value?.groupBy),
     key: normalizeString(value?.key),
     searchText: normalizeString(value?.searchText),
+    showChart: value?.showChart === true,
     sortOrder: normalizeSortOrder(value?.sortOrder),
     source: normalizeString(value?.source),
     status: normalizeStatus(value?.status),
