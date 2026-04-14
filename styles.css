@@ -74,6 +74,10 @@
   align-self: center;
 }
 
+.metrics-lens-view-action {
+  position: relative;
+}
+
 .metrics-lens-chart-placeholder {
   margin: 0;
   color: var(--text-muted);

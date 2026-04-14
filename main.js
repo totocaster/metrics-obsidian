@@ -3637,12 +3637,14 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
       this.chartActionEl.setAttribute("data-tooltip-position", "bottom");
     }
     if (this.filterActionEl) {
+      this.filterActionEl.classList.add("metrics-lens-view-action");
       this.filterActionEl.toggleClass("is-active", this.viewState.showFilters);
       (0, import_obsidian5.setIcon)(this.filterActionEl, activeFilterBarControls > 0 ? "list-filter" : "filter");
       this.filterActionEl.setAttribute("aria-label", filtersAriaLabel);
       this.filterActionEl.setAttribute("data-tooltip-position", "bottom");
     }
     if (this.sortActionEl) {
+      this.sortActionEl.classList.add("metrics-lens-view-action");
       this.sortActionEl.toggleClass(
         "is-active",
         this.viewState.sortOrder !== DEFAULT_VIEW_STATE.sortOrder

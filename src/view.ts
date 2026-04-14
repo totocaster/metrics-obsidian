@@ -999,6 +999,7 @@ export class MetricsFileView extends TextFileView {
     }
 
     if (this.filterActionEl) {
+      this.filterActionEl.classList.add("metrics-lens-view-action");
       this.filterActionEl.toggleClass("is-active", this.viewState.showFilters);
       setIcon(this.filterActionEl, activeFilterBarControls > 0 ? "list-filter" : "filter");
       this.filterActionEl.setAttribute("aria-label", filtersAriaLabel);
@@ -1006,6 +1007,7 @@ export class MetricsFileView extends TextFileView {
     }
 
     if (this.sortActionEl) {
+      this.sortActionEl.classList.add("metrics-lens-view-action");
       this.sortActionEl.toggleClass(
         "is-active",
         this.viewState.sortOrder !== DEFAULT_VIEW_STATE.sortOrder,
