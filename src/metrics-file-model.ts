@@ -356,16 +356,6 @@ function collectUnitsByKey(rows: ParsedMetricRow[]): Map<string, Set<string>> {
   return unitsByKey;
 }
 
-function sortableRowTimestamp(row: ParsedMetricRow): number | null {
-  const ts = row.metric?.ts;
-  if (typeof ts !== "string") {
-    return null;
-  }
-
-  const parsed = Date.parse(ts);
-  return Number.isNaN(parsed) ? null : parsed;
-}
-
 export function analyzeMetricsData(data: string): MetricsFileAnalysis {
   const rows: ParsedMetricRow[] = [];
 
@@ -488,25 +478,6 @@ export function analyzeMetricsData(data: string): MetricsFileAnalysis {
     return left.message.localeCompare(right.message);
   });
 
-  const sortedRows = [...rows].sort((left, right) => {
-    const leftTimestamp = sortableRowTimestamp(left);
-    const rightTimestamp = sortableRowTimestamp(right);
-
-    if (leftTimestamp !== null && rightTimestamp !== null && leftTimestamp !== rightTimestamp) {
-      return rightTimestamp - leftTimestamp;
-    }
-
-    if (leftTimestamp !== null) {
-      return -1;
-    }
-
-    if (rightTimestamp !== null) {
-      return 1;
-    }
-
-    return right.lineNumber - left.lineNumber;
-  });
-
   const validRows = rows.filter((row) => row.status === "valid").length;
   const warningRows = rows.filter((row) => row.status === "warning").length;
   const errorRows = rows.filter((row) => row.status === "error").length;
@@ -518,7 +489,7 @@ export function analyzeMetricsData(data: string): MetricsFileAnalysis {
     errorRows,
     issueSummary,
     legacyRows,
-    rows: sortedRows,
+    rows,
     totalRows: rows.length,
     validRows,
     warningRows,

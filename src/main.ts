@@ -11,6 +11,7 @@ import {
 import {
   type MetricRecord,
 } from "./contract";
+import { ScopedFileExplorerRelabelController } from "./file-explorer-relabel-controller";
 import { displayMetricName } from "./metric-catalog";
 import { MetricRecordModal } from "./metric-record-modal";
 import { formatMetricDisplayValue, rawValuePrecision } from "./metric-value-format";
@@ -24,6 +25,11 @@ import {
 } from "./metrics-file-mutation";
 import { analyzeMetricsData, type ParsedMetricRow } from "./metrics-file-model";
 import { MetricsFileModal } from "./metrics-file-modal";
+import {
+  collectOpenMetricsViewPaths,
+  refreshableMetricsViewPathsForVaultChange,
+  type MetricsVaultChange,
+} from "./metrics-refresh-scope";
 import { MetricsSearchModal, type MetricsSearchResult } from "./metrics-search-modal";
 import { DEFAULT_SETTINGS, MetricsPluginSettings, MetricsSettingTab, normalizeMetricsSettings } from "./settings";
 import { logicalMetricsBaseName, METRICS_VIEW_TYPE, MetricsFileView } from "./view";
@@ -112,8 +118,10 @@ function buildMetricsSearchResult(
 export default class MetricsPlugin extends Plugin {
   settings: MetricsPluginSettings = DEFAULT_SETTINGS;
   private readonly suppressedAutoOpenPaths = new Set<string>();
-  private fileExplorerObserver: MutationObserver | null = null;
-  private fileExplorerSyncQueued = false;
+  private readonly fileExplorerRelabelController = new ScopedFileExplorerRelabelController({
+    formatLabel: (fileName) => logicalMetricsBaseName(fileName, this.settings.supportedExtensions),
+    isMetricsPath: (path) => this.isMetricsPath(path),
+  });
   private persistViewStateTimer: number | null = null;
 
   async onload(): Promise<void> {
@@ -255,33 +263,67 @@ export default class MetricsPlugin extends Plugin {
       this.app.workspace.on("layout-change", () => {
         const file = this.app.workspace.getActiveFile();
         this.queueAutoOpen(file, this.app.workspace.activeLeaf);
+        this.refreshFileExplorerObservers();
+        this.queueFileExplorerLabelSync();
       }),
     );
 
-    this.registerEvent(this.app.vault.on("modify", () => this.refreshOpenMetricsViews()));
-    this.registerEvent(this.app.vault.on("create", () => this.refreshOpenMetricsViews()));
+    this.registerEvent(
+      this.app.vault.on("modify", (file) => {
+        this.refreshMetricsViewsForVaultChange({
+          kind: "modify",
+          path: file.path,
+        });
+      }),
+    );
+    this.registerEvent(
+      this.app.vault.on("create", (file) => {
+        const change: MetricsVaultChange = {
+          kind: "create",
+          path: file.path,
+        };
+        this.refreshMetricsViewsForVaultChange(change);
+        this.queueFileExplorerLabelSyncForChange(change);
+      }),
+    );
     this.registerEvent(
       this.app.vault.on("delete", (file) => {
-        this.forgetPersistedViewStateForPath(file.path);
-        void this.resetDeletedMetricsLeaves(file.path);
-        this.refreshOpenMetricsViews();
+        const deletedPath = normalizePath(file.path);
+        const change: MetricsVaultChange = {
+          kind: "delete",
+          path: deletedPath,
+        };
+
+        if (this.isMetricsPath(deletedPath)) {
+          this.forgetPersistedViewStateForPath(deletedPath);
+          void this.resetDeletedMetricsLeaves(deletedPath);
+        }
+
+        this.queueFileExplorerLabelSyncForChange(change);
       }),
     );
     this.registerEvent(
       this.app.vault.on("rename", (file, oldPath) => {
+        const change: MetricsVaultChange = {
+          kind: "rename",
+          oldPath,
+          path: file.path,
+        };
+
         if (file instanceof TFile) {
           this.handleMetricsFileRename(file, oldPath);
         } else if (this.isMetricsPath(normalizePath(oldPath))) {
           this.forgetPersistedViewStateForPath(oldPath);
         }
-        this.refreshOpenMetricsViews();
+        this.refreshMetricsViewsForVaultChange(change);
+        this.queueFileExplorerLabelSyncForChange(change);
       }),
     );
 
     this.app.workspace.onLayoutReady(() => {
       const activeFile = this.app.workspace.getActiveFile();
       this.queueAutoOpen(activeFile, this.app.workspace.activeLeaf);
-      this.installFileExplorerObserver();
+      this.refreshFileExplorerObservers();
       this.queueFileExplorerLabelSync();
     });
   }
@@ -293,9 +335,7 @@ export default class MetricsPlugin extends Plugin {
       await this.saveSettings();
     }
 
-    this.fileExplorerObserver?.disconnect();
-    this.fileExplorerObserver = null;
-    this.restoreFileExplorerLabels();
+    this.fileExplorerRelabelController.disconnect();
 
     for (const leaf of this.app.workspace.getLeavesOfType(METRICS_VIEW_TYPE)) {
       const view = leaf.view;
@@ -423,15 +463,21 @@ export default class MetricsPlugin extends Plugin {
     this.app.workspace.revealLeaf(leaf);
   }
 
-  refreshOpenMetricsViews(): void {
+  refreshOpenMetricsViews(filePaths?: readonly string[]): void {
+    const targetPaths = filePaths ? new Set(filePaths.map((path) => normalizePath(path))) : null;
+
     this.app.workspace.getLeavesOfType(METRICS_VIEW_TYPE).forEach((leaf) => {
       const view = leaf.view;
-      if (view instanceof MetricsFileView) {
-        view.refreshView();
+      if (!(view instanceof MetricsFileView)) {
+        return;
       }
-    });
 
-    this.queueFileExplorerLabelSync();
+      if (targetPaths && (!view.file || !targetPaths.has(normalizePath(view.file.path)))) {
+        return;
+      }
+
+      view.refreshView();
+    });
   }
 
   async assignMissingIds(file: TFile): Promise<void> {
@@ -994,86 +1040,40 @@ export default class MetricsPlugin extends Plugin {
       return null;
     }
 
-    const view = leaf.view as FileView;
-    if ("file" in view) {
-      return view.file ?? null;
-    }
-
-    return null;
+    return leaf.view instanceof FileView ? leaf.view.file ?? null : null;
   }
 
-  private installFileExplorerObserver(): void {
-    if (this.fileExplorerObserver) {
-      this.fileExplorerObserver.disconnect();
-    }
-
-    this.fileExplorerObserver = new MutationObserver(() => {
-      this.queueFileExplorerLabelSync();
-    });
-
-    this.fileExplorerObserver.observe(document.body, {
-      childList: true,
-      subtree: true,
-    });
-  }
-
-  private queueFileExplorerLabelSync(): void {
-    if (this.fileExplorerSyncQueued) {
+  private refreshMetricsViewsForVaultChange(change: MetricsVaultChange): void {
+    const openMetricsViewPaths = collectOpenMetricsViewPaths(
+      this.app.workspace.getLeavesOfType(METRICS_VIEW_TYPE),
+    );
+    const affectedPaths = refreshableMetricsViewPathsForVaultChange(
+      change,
+      openMetricsViewPaths,
+      this.settings.supportedExtensions,
+    );
+    if (affectedPaths.length === 0) {
       return;
     }
 
-    this.fileExplorerSyncQueued = true;
-    window.requestAnimationFrame(() => {
-      this.fileExplorerSyncQueued = false;
-      this.syncFileExplorerLabels();
-    });
+    this.refreshOpenMetricsViews(affectedPaths);
   }
 
-  private syncFileExplorerLabels(): void {
-    const titleEls = document.querySelectorAll<HTMLElement>(".nav-file-title[data-path]");
-
-    titleEls.forEach((titleEl) => {
-      const path = titleEl.getAttribute("data-path");
-      const contentEl =
-        titleEl.querySelector<HTMLElement>(".nav-file-title-content") ??
-        titleEl.querySelector<HTMLElement>(".tree-item-inner");
-
-      if (!path || !contentEl || titleEl.querySelector("input")) {
-        return;
-      }
-
-      if (!this.isMetricsPath(path)) {
-        if (contentEl.dataset.metricsOriginalLabel !== undefined) {
-          contentEl.textContent = contentEl.dataset.metricsOriginalLabel;
-          delete contentEl.dataset.metricsOriginalLabel;
-        }
-        return;
-      }
-
-      if (contentEl.dataset.metricsOriginalLabel === undefined) {
-        contentEl.dataset.metricsOriginalLabel = contentEl.textContent ?? "";
-      }
-
-      const fileName = path.split("/").pop() ?? path;
-      contentEl.textContent = logicalMetricsBaseName(fileName, this.settings.supportedExtensions);
-    });
+  private refreshFileExplorerObservers(): void {
+    this.fileExplorerRelabelController.observeRoots(
+      document.querySelectorAll<HTMLElement>(".nav-files-container"),
+    );
   }
 
-  private restoreFileExplorerLabels(): void {
-    const titleEls = document.querySelectorAll<HTMLElement>(".nav-file-title[data-path]");
+  queueFileExplorerLabelSync(): void {
+    this.fileExplorerRelabelController.queueSync();
+  }
 
-    titleEls.forEach((titleEl) => {
-      const contentEl =
-        titleEl.querySelector<HTMLElement>(".nav-file-title-content") ??
-        titleEl.querySelector<HTMLElement>(".tree-item-inner");
-
-      if (!contentEl || contentEl.dataset.metricsOriginalLabel === undefined) {
-        return;
-      }
-
-      contentEl.textContent = contentEl.dataset.metricsOriginalLabel;
-      delete contentEl.dataset.metricsOriginalLabel;
-    });
+  private queueFileExplorerLabelSyncForChange(change: MetricsVaultChange): void {
+    const candidatePaths = [change.path, change.oldPath];
+    if (candidatePaths.some((path) => this.isMetricsPath(path ? normalizePath(path) : null))) {
+      this.queueFileExplorerLabelSync();
+    }
   }
 
 }

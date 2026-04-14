@@ -21,8 +21,13 @@ import {
 } from "./metric-value-format";
 import {
   analyzeMetricsData,
+  type MetricsFileAnalysis,
   type ParsedMetricRow,
 } from "./metrics-file-model";
+import {
+  rowDateValue,
+  rowTimestamp,
+} from "./metrics-row-selectors";
 import {
   createDefaultViewState,
   DEFAULT_VIEW_STATE,
@@ -72,34 +77,6 @@ function formatMetricValue(row: ParsedMetricRow): string | null {
     metricKey: row.metric?.key,
     rawPrecision: rawValuePrecision(row.rawLine),
   });
-}
-
-function rowTimestamp(row: ParsedMetricRow): number | null {
-  const ts = row.metric?.ts;
-  if (typeof ts !== "string") {
-    return null;
-  }
-
-  const parsed = Date.parse(ts);
-  return Number.isNaN(parsed) ? null : parsed;
-}
-
-function rowDateValue(row: ParsedMetricRow): string | null {
-  if (typeof row.metric?.date === "string" && row.metric.date.length === 10) {
-    return row.metric.date;
-  }
-
-  const ts = row.metric?.ts;
-  if (typeof ts !== "string" || ts.length < 10) {
-    return null;
-  }
-
-  const parsed = Date.parse(ts);
-  if (Number.isNaN(parsed)) {
-    return null;
-  }
-
-  return ts.slice(0, 10);
 }
 
 function toLocalDateString(date: Date): string {
@@ -1185,9 +1162,11 @@ export class MetricsFileView extends TextFileView {
   private chartActionEl: HTMLElement | null = null;
   private clearTargetedRecordTimeout: number | null = null;
   private filterActionEl: HTMLElement | null = null;
+  private metricsAnalysisCache: { data: string; analysis: MetricsFileAnalysis } | null = null;
   private pendingControlFocus: ControlFocusState | null = null;
   private pendingMetricLineNumberFocus: number | null = null;
   private pendingMetricIdFocus: string | null = null;
+  private searchRenderTimeout: number | null = null;
   private sortActionEl: HTMLElement | null = null;
   private viewState: MetricsViewState = createDefaultViewState();
   private viewActionSeparatorEl: HTMLElement | null = null;
@@ -1228,6 +1207,8 @@ export class MetricsFileView extends TextFileView {
       window.clearTimeout(this.clearTargetedRecordTimeout);
       this.clearTargetedRecordTimeout = null;
     }
+
+    this.clearSearchRenderTimeout();
   }
 
   clear(): void {
@@ -1471,6 +1452,7 @@ export class MetricsFileView extends TextFileView {
   }
 
   private render(): void {
+    this.clearSearchRenderTimeout();
     this.contentEl.empty();
 
     const container = this.contentEl.createDiv({ cls: "metrics-lens-view" });
@@ -1491,7 +1473,7 @@ export class MetricsFileView extends TextFileView {
       this.viewStateFilePath = currentFile.path;
     }
 
-    const analysis = analyzeMetricsData(this.data ?? "");
+    const analysis = this.getMetricsAnalysis();
     const availableKeys = withSelectedFilterValues(
       collectFilterValues(analysis.rows, "key", this.plugin.settings.metricNameDisplayMode),
       this.viewState.keys,
@@ -1748,7 +1730,7 @@ export class MetricsFileView extends TextFileView {
       this.pendingControlFocus = this.controlFocusState("search", searchInput);
       this.viewState.searchText = searchInput.value;
       this.persistCurrentViewState();
-      this.render();
+      this.scheduleSearchRender();
     });
 
     if (hasActiveViewControls(this.viewState)) {
@@ -2076,6 +2058,35 @@ export class MetricsFileView extends TextFileView {
     ) {
       targetEl.setSelectionRange(focusState.selectionStart, focusState.selectionEnd);
     }
+  }
+
+  private getMetricsAnalysis(): MetricsFileAnalysis {
+    const data = this.data ?? "";
+
+    if (this.metricsAnalysisCache?.data === data) {
+      return this.metricsAnalysisCache.analysis;
+    }
+
+    const analysis = analyzeMetricsData(data);
+    this.metricsAnalysisCache = { data, analysis };
+    return analysis;
+  }
+
+  private scheduleSearchRender(): void {
+    this.clearSearchRenderTimeout();
+    this.searchRenderTimeout = window.setTimeout(() => {
+      this.searchRenderTimeout = null;
+      this.render();
+    }, 150);
+  }
+
+  private clearSearchRenderTimeout(): void {
+    if (this.searchRenderTimeout === null) {
+      return;
+    }
+
+    window.clearTimeout(this.searchRenderTimeout);
+    this.searchRenderTimeout = null;
   }
 
   private controlFocusState(

@@ -9,6 +9,10 @@ import {
   rawValuePrecision,
   resolveMetricFractionDigits,
 } from "./metric-value-format";
+import {
+  rowDateValue,
+  rowTimestamp,
+} from "./metrics-row-selectors";
 import type { MetricsGroupBy } from "./view-state";
 
 export type MetricsChartKind = "bar" | "line";
@@ -66,34 +70,6 @@ export interface MetricsChartModel {
 }
 
 export const NO_UNIT_KEY = "__no_unit__";
-
-function rowTimestamp(row: ParsedMetricRow): number | null {
-  const ts = row.metric?.ts;
-  if (typeof ts !== "string") {
-    return null;
-  }
-
-  const parsed = Date.parse(ts);
-  return Number.isNaN(parsed) ? null : parsed;
-}
-
-function rowDateValue(row: ParsedMetricRow): string | null {
-  if (typeof row.metric?.date === "string" && row.metric.date.length === 10) {
-    return row.metric.date;
-  }
-
-  const ts = row.metric?.ts;
-  if (typeof ts !== "string" || ts.length < 10) {
-    return null;
-  }
-
-  const parsed = Date.parse(ts);
-  if (Number.isNaN(parsed)) {
-    return null;
-  }
-
-  return ts.slice(0, 10);
-}
 
 function startOfDayTimestamp(day: string): number | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) {

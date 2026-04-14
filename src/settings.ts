@@ -94,6 +94,7 @@ export class MetricsSettingTab extends PluginSettingTab {
           this.plugin.settings.metricsRoot = normalizePath(value || DEFAULT_SETTINGS.metricsRoot);
           await this.plugin.saveSettings();
           this.plugin.refreshOpenMetricsViews();
+          this.plugin.queueFileExplorerLabelSync();
         });
       });
 
@@ -107,6 +108,7 @@ export class MetricsSettingTab extends PluginSettingTab {
           this.plugin.settings.supportedExtensions = parseExtensions(value);
           await this.plugin.saveSettings();
           this.plugin.refreshOpenMetricsViews();
+          this.plugin.queueFileExplorerLabelSync();
         });
       });
 
