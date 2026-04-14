@@ -7,9 +7,9 @@
 - Scaffold status: complete in this repository
 - Vault dev status: linked into the live `totocaster` vault for real-time testing
 - Scope status: contract, scaffold, file lifecycle, current-file metrics lens, and current-file charting are implemented
-- Current implementation status: file-backed metrics timeline view, record parsing, validation, missing-id migration, current-file CRUD, metrics file create/rename/delete, per-file filtering/sorting persistence, grouping by day, metric, and source, and interactive charts are working
+- Current implementation status: file-backed metrics timeline view, record parsing, validation, missing-id migration, current-file CRUD, metrics file create/rename/delete, per-file filter-bar/filter/sort persistence, grouping by day, metric, and source, and interactive charts are working
 - File browser status: `*.metrics.ndjson` files are routed into the plugin view and sidebar labels are normalized to logical metric dataset names
-- UI status: compact timeline layout, per-file persisted view controls, grouping, row action menu, title-bar file actions, optional metric icons, and chart-to-timeline selection are implemented
+- UI status: compact timeline layout, per-file persisted view controls, title-bar chart/filter/sort actions, grouping, row action menu, title-bar file actions, optional metric icons, and chart-to-timeline selection are implemented
 - Next implementation phase: cross-file navigation and file-level polish
 
 ## Product
@@ -185,8 +185,8 @@ The display name omits "Obsidian" to stay aligned with common community plugin n
 - The current file view is rendered as a compact timeline with minimal default Obsidian styling
 - Records are sorted newest-first by default using `ts`
 - The current file view supports local filters for key, source, status, text, and date range
-- Filter, search, sort, time range, and grouping state persist per metrics file until the user clicks `Reset`
-- The primary toolbar keeps time range, metrics, search, and sort visible, with advanced filters under `More`
+- Filter-bar visibility, filter, search, sort, time range, and grouping state persist per metrics file until the user clicks `Reset`
+- The filter bar keeps time range, metrics, and search visible, with advanced filters under `More`, while sort now lives in the title bar next to the chart and filter toggles
 - The current file view supports preset time ranges including today, this week, past 7 days, past 30 days, past 3 months, past 6 months, past 1 year, this month, and custom range
 - The current file view supports sort modes for newest-first, oldest-first, and value ordering
 - The current file view can group records by day, metric, or source
@@ -194,7 +194,7 @@ The display name omits "Obsidian" to stay aligned with common community plugin n
 - Metric icons can be shown in timeline markers and are enabled by default when the icon exists in Obsidian
 - Record actions are available from a minimal `...` menu for copying stable `metric:<id>` references, plus copy, edit, and delete operations
 - Metrics files can now be created, renamed, and deleted from commands or the metrics view title bar
-- The current file view can render interactive charts above the filters using the same visible rows as the timeline
+- The current file view can render interactive charts above the filter bar when it is shown, using the same visible rows as the timeline
 - Chart buckets can now focus the matching visible timeline rows below
 - The current phase is substantially complete; the next meaningful milestone is cross-file navigation and file-level polish
 

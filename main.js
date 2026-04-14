@@ -493,6 +493,7 @@ var DEFAULT_VIEW_STATE = {
   key: "",
   searchText: "",
   showChart: false,
+  showFilters: true,
   sortOrder: "newest",
   source: "",
   status: "all",
@@ -524,6 +525,7 @@ function normalizeMetricsViewState(value) {
     key: normalizeString(value?.key),
     searchText: normalizeString(value?.searchText),
     showChart: value?.showChart === true,
+    showFilters: value?.showFilters !== false,
     sortOrder: normalizeSortOrder(value?.sortOrder),
     source: normalizeString(value?.source),
     status: normalizeStatus(value?.status),
@@ -2742,10 +2744,29 @@ function applyMetricsViewState(rows, viewState) {
   });
 }
 function hasActiveViewControls(viewState) {
-  return hasActivePrimaryControls(viewState) || advancedControlCount(viewState) > 0;
+  return filterBarControlCount(viewState) > 0 || viewState.showChart !== DEFAULT_VIEW_STATE.showChart || viewState.sortOrder !== DEFAULT_VIEW_STATE.sortOrder;
 }
-function hasActivePrimaryControls(viewState) {
-  return hasActiveTimeRange(viewState) || viewState.key.length > 0 || viewState.searchText.trim().length > 0 || viewState.showChart !== DEFAULT_VIEW_STATE.showChart || viewState.sortOrder !== DEFAULT_VIEW_STATE.sortOrder;
+function filterBarControlCount(viewState) {
+  let count = 0;
+  if (hasActiveTimeRange(viewState)) {
+    count += 1;
+  }
+  if (viewState.key.length > 0) {
+    count += 1;
+  }
+  if (viewState.searchText.trim().length > 0) {
+    count += 1;
+  }
+  if (viewState.source.length > 0) {
+    count += 1;
+  }
+  if (viewState.status !== "all") {
+    count += 1;
+  }
+  if (viewState.groupBy !== "none") {
+    count += 1;
+  }
+  return count;
 }
 function hasActiveTimeRange(viewState) {
   if (viewState.timeRange === "all") {
@@ -3056,8 +3077,10 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
   chartActionEl = null;
   clearTargetedRecordTimeout = null;
   fileActionsActionEl = null;
+  filterActionEl = null;
   pendingControlFocus = null;
   pendingMetricIdFocus = null;
+  sortActionEl = null;
   viewState = createDefaultViewState();
   viewActionSeparatorEl = null;
   viewStateFilePath = null;
@@ -3107,9 +3130,10 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
     if (this.file) {
       this.viewStateFilePath = this.file.path;
     }
-    const showChart = this.viewState.showChart;
+    const { showChart, showFilters } = this.viewState;
     this.viewState = createDefaultViewState();
     this.viewState.showChart = showChart;
+    this.viewState.showFilters = showFilters;
     this.advancedControlsExpanded = false;
     this.pendingMetricIdFocus = metricId;
     this.render();
@@ -3120,6 +3144,26 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
         const actionEl = this.fileActionsActionEl;
         const rect = actionEl?.getBoundingClientRect();
         this.plugin.openMetricsFileActionsMenu(this.file, rect ?? void 0);
+      });
+    }
+    if (!this.sortActionEl) {
+      this.sortActionEl = this.addAction("arrow-up-down", "Sort metrics", () => {
+        if (!this.file) {
+          new import_obsidian5.Notice("Open a metrics file first.");
+          return;
+        }
+        this.openSortMenu(this.sortActionEl);
+      });
+    }
+    if (!this.filterActionEl) {
+      this.filterActionEl = this.addAction("filter", "Hide filters", () => {
+        if (!this.file) {
+          new import_obsidian5.Notice("Open a metrics file first.");
+          return;
+        }
+        this.viewState.showFilters = !this.viewState.showFilters;
+        this.persistCurrentViewState();
+        this.render();
       });
     }
     if (!this.chartActionEl) {
@@ -3142,23 +3186,35 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
         this.plugin.openCreateRecordModal(this.file);
       });
     }
-    if (this.addRecordActionEl?.parentElement && this.chartActionEl?.parentElement && !this.viewActionSeparatorEl) {
-      const separator = this.addRecordActionEl.parentElement.createDiv({
-        cls: "metrics-lens-view-action-separator"
+    if (this.addRecordActionEl && this.chartActionEl && this.filterActionEl && this.sortActionEl && this.fileActionsActionEl && this.addRecordActionEl.parentElement) {
+      const actionsContainer = this.addRecordActionEl.parentElement;
+      if (!this.viewActionSeparatorEl) {
+        this.viewActionSeparatorEl = actionsContainer.createDiv({
+          cls: "metrics-lens-view-action-separator"
+        });
+      }
+      if (!this.actionsSeparatorEl) {
+        this.actionsSeparatorEl = actionsContainer.createDiv({
+          cls: "metrics-lens-view-action-separator"
+        });
+      }
+      [
+        this.addRecordActionEl,
+        this.viewActionSeparatorEl,
+        this.chartActionEl,
+        this.filterActionEl,
+        this.sortActionEl,
+        this.actionsSeparatorEl,
+        this.fileActionsActionEl
+      ].forEach((element) => {
+        actionsContainer.appendChild(element);
       });
-      this.addRecordActionEl.parentElement.insertBefore(separator, this.chartActionEl);
-      this.viewActionSeparatorEl = separator;
-    }
-    if (this.chartActionEl?.parentElement && this.fileActionsActionEl?.parentElement && !this.actionsSeparatorEl) {
-      const separator = this.fileActionsActionEl.parentElement.createDiv({
-        cls: "metrics-lens-view-action-separator"
-      });
-      this.chartActionEl.parentElement.insertBefore(separator, this.fileActionsActionEl);
-      this.actionsSeparatorEl = separator;
     }
     this.syncHeaderActions();
   }
   syncHeaderActions() {
+    const activeFilterBarControls = filterBarControlCount(this.viewState);
+    const filtersAriaLabel = this.viewState.showFilters ? activeFilterBarControls > 0 ? `Hide filters (${activeFilterBarControls} active)` : "Hide filters" : activeFilterBarControls > 0 ? `Show filters (${activeFilterBarControls} active)` : "Show filters";
     if (this.fileActionsActionEl) {
       this.fileActionsActionEl.setAttribute("aria-label", "Metrics file actions");
       this.fileActionsActionEl.setAttribute("data-tooltip-position", "bottom");
@@ -3171,10 +3227,58 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
       );
       this.chartActionEl.setAttribute("data-tooltip-position", "bottom");
     }
+    if (this.filterActionEl) {
+      this.filterActionEl.toggleClass("is-active", this.viewState.showFilters);
+      (0, import_obsidian5.setIcon)(this.filterActionEl, activeFilterBarControls > 0 ? "list-filter" : "filter");
+      this.filterActionEl.setAttribute("aria-label", filtersAriaLabel);
+      this.filterActionEl.setAttribute("data-tooltip-position", "bottom");
+    }
+    if (this.sortActionEl) {
+      this.sortActionEl.toggleClass(
+        "is-active",
+        this.viewState.sortOrder !== DEFAULT_VIEW_STATE.sortOrder
+      );
+      this.sortActionEl.setAttribute(
+        "aria-label",
+        `Sort metrics: ${this.sortOrderLabel(this.viewState.sortOrder)}`
+      );
+      this.sortActionEl.setAttribute("data-tooltip-position", "bottom");
+    }
     if (this.addRecordActionEl) {
       this.addRecordActionEl.setAttribute("aria-label", "Add record");
       this.addRecordActionEl.setAttribute("data-tooltip-position", "bottom");
     }
+  }
+  openSortMenu(anchorEl) {
+    const menu = new import_obsidian5.Menu();
+    [
+      { label: "Newest first", value: "newest" },
+      { label: "Oldest first", value: "oldest" },
+      { label: "Value high-low", value: "value-desc" },
+      { label: "Value low-high", value: "value-asc" }
+    ].forEach((option) => {
+      menu.addItem((item) => {
+        item.setTitle(option.label).setChecked(this.viewState.sortOrder === option.value).onClick(() => {
+          this.viewState.sortOrder = option.value;
+          this.persistCurrentViewState();
+          this.render();
+        });
+      });
+    });
+    if (anchorEl) {
+      const rect = anchorEl.getBoundingClientRect();
+      menu.showAtPosition({
+        overlap: true,
+        width: rect.width,
+        x: rect.left,
+        y: rect.bottom
+      });
+      return;
+    }
+    menu.showAtPosition({
+      x: window.innerWidth / 2,
+      y: 80
+    });
   }
   persistCurrentViewState() {
     this.plugin.persistViewState(this.viewStateFilePath, this.viewState, this.advancedControlsExpanded);
@@ -3332,6 +3436,9 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
     this.restorePendingControlFocus();
   }
   renderControls(container, availableKeys, availableSources) {
+    if (!this.viewState.showFilters) {
+      return;
+    }
     const controls = container.createDiv({ cls: ["metrics-lens-section", "metrics-lens-controls"] });
     const primaryControls = controls.createDiv({ cls: "metrics-lens-primary-controls" });
     const showAdvancedControls = this.advancedControlsExpanded;
@@ -3425,35 +3532,6 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
       this.persistCurrentViewState();
       this.render();
     });
-    const sortButton = primaryControls.createEl("button", {
-      cls: ["clickable-icon", "metrics-lens-icon-button"]
-    });
-    sortButton.type = "button";
-    sortButton.dataset.metricsControl = "sort";
-    sortButton.setAttribute("aria-label", `Sort metrics: ${this.sortOrderLabel(this.viewState.sortOrder)}`);
-    sortButton.setAttribute("data-tooltip-position", "top");
-    (0, import_obsidian5.setIcon)(sortButton, "arrow-up-down");
-    sortButton.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const menu = new import_obsidian5.Menu();
-      [
-        { label: "Newest first", value: "newest" },
-        { label: "Oldest first", value: "oldest" },
-        { label: "Value high-low", value: "value-desc" },
-        { label: "Value low-high", value: "value-asc" }
-      ].forEach((option) => {
-        menu.addItem((item) => {
-          item.setTitle(option.label).setChecked(this.viewState.sortOrder === option.value).onClick(() => {
-            this.pendingControlFocus = { name: "sort" };
-            this.viewState.sortOrder = option.value;
-            this.persistCurrentViewState();
-            this.render();
-          });
-        });
-      });
-      menu.showAtMouseEvent(event);
-    });
     if (hasActiveViewControls(this.viewState)) {
       const resetButton = primaryControls.createEl("button", {
         cls: ["clickable-icon", "metrics-lens-icon-button", "metrics-lens-reset-view-button"]
@@ -3462,7 +3540,7 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
       resetButton.dataset.metricsControl = "reset";
       resetButton.setAttribute("aria-label", "Reset current filters and sorting");
       resetButton.setAttribute("data-tooltip-position", "top");
-      (0, import_obsidian5.setIcon)(resetButton, "rotate-ccw");
+      (0, import_obsidian5.setIcon)(resetButton, "filter-x");
       resetButton.addEventListener("click", () => {
         this.resetCurrentViewState();
         this.render();

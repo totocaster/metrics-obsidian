@@ -21,6 +21,7 @@ export interface MetricsViewState {
   key: string;
   searchText: string;
   showChart: boolean;
+  showFilters: boolean;
   sortOrder: MetricsSortOrder;
   source: string;
   status: MetricsStatusFilter;
@@ -39,6 +40,7 @@ export const DEFAULT_VIEW_STATE: MetricsViewState = {
   key: "",
   searchText: "",
   showChart: false,
+  showFilters: true,
   sortOrder: "newest",
   source: "",
   status: "all",
@@ -94,6 +96,7 @@ export function normalizeMetricsViewState(
     key: normalizeString(value?.key),
     searchText: normalizeString(value?.searchText),
     showChart: value?.showChart === true,
+    showFilters: value?.showFilters !== false,
     sortOrder: normalizeSortOrder(value?.sortOrder),
     source: normalizeString(value?.source),
     status: normalizeStatus(value?.status),

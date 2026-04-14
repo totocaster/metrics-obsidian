@@ -4,7 +4,7 @@
 
 - Status: active and implemented for the current-file metrics view
 - Target phase: current-file charting inside the existing metrics view
-- Implemented so far: per-file `show chart` toggle in the title bar, chart placement above filters, native SVG rendering, stacked day bars, hover crosshair/tooltip, interactive legends, adaptive axis formatting, and chart-to-timeline row focus
+- Implemented so far: per-file `show chart` toggle in the title bar, chart placement above the filter bar when visible, native SVG rendering, stacked day bars, hover crosshair/tooltip, interactive legends, adaptive axis formatting, and chart-to-timeline row focus
 - Not implemented yet: grouped-section-specific charts and deeper drill-down modes
 
 ## Goals
@@ -195,7 +195,7 @@ Implement chart rendering with native SVG, not a third-party chart library in v1
 - Use Obsidian theme variables for all colors and strokes.
 - Keep the chart visually minimal and aligned with the current default-styled view.
 - Prefer subtle grid lines and compact axes.
-- Chart sits above the filter controls and the timeline.
+- Chart sits above the filter controls when they are visible, and above the timeline.
 
 ## UI plan
 
@@ -216,7 +216,7 @@ Implement chart rendering with native SVG, not a third-party chart library in v1
 ### Phase 1: view state and chart model
 
 1. Extend per-file persisted view state with `showChart`.
-2. Add a chart toggle icon to the primary controls row.
+2. Add a chart toggle icon to the title bar.
 3. Create a new chart-model module that converts visible rows into chart buckets and series.
 4. Reuse the existing filter and grouping pipeline rather than duplicating it.
 
