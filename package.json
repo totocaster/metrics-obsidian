@@ -8,7 +8,8 @@
   "scripts": {
     "build": "node esbuild.config.mjs production",
     "check": "tsc --noEmit",
-    "dev": "node esbuild.config.mjs"
+    "dev": "node esbuild.config.mjs",
+    "generate:metric-catalog-doc": "node scripts/generate-metric-catalog-doc.mjs"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",

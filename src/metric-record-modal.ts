@@ -1,6 +1,14 @@
 import { App, Modal, Notice, Setting } from "obsidian";
 
 import type { MetricRecord } from "./contract";
+import {
+  allMetricKeys,
+  allUnitKeys,
+  displayMetricKey,
+  displayMetricUnitOption,
+  getDefaultUnitForMetric,
+  getSupportedUnitsForMetric,
+} from "./metric-catalog";
 import type { MetricRecordInput } from "./metrics-file-mutation";
 
 interface MetricRecordModalOptions {
@@ -16,6 +24,19 @@ function currentIsoTimestamp(): string {
 function trimOrUndefined(value: string): string | undefined {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function populateDatalist(
+  datalist: HTMLDataListElement,
+  values: string[],
+  labelForValue: (value: string) => string,
+): void {
+  datalist.empty();
+  values.forEach((value) => {
+    const option = datalist.createEl("option");
+    option.value = value;
+    option.label = labelForValue(value);
+  });
 }
 
 export class MetricRecordModal extends Modal {
@@ -50,6 +71,30 @@ export class MetricRecordModal extends Modal {
     let note = initial?.note ?? "";
     let tags = initial?.tags?.join(", ") ?? "";
     let context = initial?.context ? JSON.stringify(initial.context, null, 2) : "";
+    const inputIdSuffix = Math.random().toString(36).slice(2, 8);
+    const keySuggestionsId = `metrics-lens-key-suggestions-${inputIdSuffix}`;
+    const unitSuggestionsId = `metrics-lens-unit-suggestions-${inputIdSuffix}`;
+    let unitInputEl: HTMLInputElement | null = null;
+
+    const keySuggestions = contentEl.createEl("datalist");
+    keySuggestions.id = keySuggestionsId;
+    populateDatalist(keySuggestions, allMetricKeys(), displayMetricKey);
+
+    const unitSuggestions = contentEl.createEl("datalist");
+    unitSuggestions.id = unitSuggestionsId;
+
+    const syncUnitSuggestions = (): void => {
+      const supportedUnits = getSupportedUnitsForMetric(key.trim());
+      populateDatalist(
+        unitSuggestions,
+        supportedUnits.length > 0 ? supportedUnits : allUnitKeys(),
+        displayMetricUnitOption,
+      );
+
+      if (unitInputEl) {
+        unitInputEl.placeholder = getDefaultUnitForMetric(key.trim()) ?? "kg";
+      }
+    };
 
     new Setting(contentEl)
       .setName("Timestamp")
@@ -75,12 +120,14 @@ export class MetricRecordModal extends Modal {
 
     new Setting(contentEl)
       .setName("Key")
-      .setDesc("Canonical metric key.")
+      .setDesc("Canonical metric key. Known keys are suggested from the built-in catalog.")
       .addText((text) => {
         text.setPlaceholder("body.weight");
         text.setValue(key);
+        text.inputEl.setAttribute("list", keySuggestionsId);
         text.onChange((nextValue) => {
           key = nextValue;
+          syncUnitSuggestions();
         });
       });
 
@@ -99,9 +146,11 @@ export class MetricRecordModal extends Modal {
 
     new Setting(contentEl)
       .setName("Unit")
-      .setDesc("Optional display unit.")
+      .setDesc("Optional display unit. Catalog-backed suggestions follow the current key.")
       .addText((text) => {
-        text.setPlaceholder("kg");
+        unitInputEl = text.inputEl;
+        text.inputEl.setAttribute("list", unitSuggestionsId);
+        text.setPlaceholder(getDefaultUnitForMetric(key.trim()) ?? "kg");
         text.setValue(unit);
         text.onChange((nextValue) => {
           unit = nextValue;
@@ -156,6 +205,8 @@ export class MetricRecordModal extends Modal {
     contextTextarea.addEventListener("input", () => {
       context = contextTextarea.value;
     });
+
+    syncUnitSuggestions();
 
     const buttonRow = contentEl.createDiv({ cls: "metrics-lens-actions" });
     const cancelButton = buttonRow.createEl("button", { text: "Cancel" });

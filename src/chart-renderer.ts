@@ -6,6 +6,7 @@ import type {
   MetricsChartSeriesPoint,
   MetricsChartStackSegment,
 } from "./chart-model";
+import { NO_UNIT_KEY } from "./chart-model";
 import { formatMetricDisplayValue } from "./metric-value-format";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -373,7 +374,11 @@ function appendYAxis(
       x: PLOT_LEFT - 8,
       y: y + 4,
     });
-    label.textContent = formatChartAxisValue(value, panel.axisPrecision, panel.unitLabel);
+    label.textContent = formatChartAxisValue(
+      value,
+      panel.axisPrecision,
+      panel.unitKey === NO_UNIT_KEY ? null : panel.unitKey,
+    );
     svg.appendChild(label);
   });
 
@@ -594,7 +599,12 @@ function renderTooltip(
     });
     row.createSpan({
       cls: "metrics-lens-chart-tooltip-value",
-      text: formatChartTooltipValue(entry.value, entry.metricKey, entry.precision, panel.unitLabel),
+      text: formatChartTooltipValue(
+        entry.value,
+        entry.metricKey,
+        entry.precision,
+        panel.unitKey === NO_UNIT_KEY ? null : panel.unitKey,
+      ),
     });
   });
 }
@@ -924,6 +934,11 @@ function renderLegend(
 
 function chartPanelTitle(panel: MetricsChartPanel): string {
   const seriesLabels = panel.series.map((entry) => entry.label);
+  const hasValueSeriesOnly = seriesLabels.length === 1 && seriesLabels[0] === "Value";
+
+  if (panel.unitLabel && hasValueSeriesOnly) {
+    return panel.unitLabel;
+  }
 
   if (panel.unitLabel && seriesLabels.length === 1) {
     return `${seriesLabels[0]} (${panel.unitLabel})`;

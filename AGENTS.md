@@ -119,6 +119,7 @@ Important contract decisions:
 
 - `src/metric-record-modal.ts`
   - record create/edit modal
+  - catalog-backed key and unit suggestions
 
 ### Charts
 
@@ -126,12 +127,19 @@ Important contract decisions:
   - derives chart data from already-visible rows
   - respects filtering/grouping rules
   - handles unit splits and day stacking
+  - uses catalog-backed metric and unit labels
 
 - `src/chart-renderer.ts`
   - native SVG chart rendering
   - hover, legend, tooltip, and selection behavior
 
 ### Shared state and formatting
+
+- `src/metric-catalog.json`
+  - canonical machine-readable metric and unit catalog
+
+- `src/metric-catalog.ts`
+  - typed accessors for catalog-backed validation and display behavior
 
 - `src/settings.ts`
   - plugin settings persistence
@@ -141,10 +149,12 @@ Important contract decisions:
 
 - `src/metric-icons.ts`
   - metric icon lookup using Obsidian/Lucide icon ids
+  - backed by the metric catalog
 
 - `src/metric-value-format.ts`
   - metric value display helpers
-  - duration formatting for `min` and `sec`
+  - catalog-backed unit display and fraction digits
+  - duration formatting for `min`, `sec`, and `hours`
 
 - `src/contract.ts`
   - contract-level helpers and shared constants
@@ -201,6 +211,7 @@ Useful commands:
 npm run dev
 npm run build
 npm run check
+npm run generate:metric-catalog-doc
 ```
 
 Expected workflow:
@@ -224,6 +235,7 @@ When changing product behavior, keep these docs aligned:
 
 - `docs/spec.md`
 - `docs/charts.md`
+- `docs/metric-catalog.md`
 - `README.md`
 - `AGENTS.md`
 

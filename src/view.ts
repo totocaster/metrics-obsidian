@@ -4,6 +4,11 @@ import { buildMetricsChartModel } from "./chart-model";
 import { renderMetricsChart, type MetricsChartSelection } from "./chart-renderer";
 import { toMetricReference, type MetricRecord } from "./contract";
 import type MetricsPlugin from "./main";
+import {
+  compareMetricKeys,
+  displayMetricKey,
+  displayMetricOption,
+} from "./metric-catalog";
 import { metricIconForKey } from "./metric-icons";
 import {
   formatMetricDisplayValue,
@@ -207,6 +212,7 @@ function rowSearchText(row: ParsedMetricRow): string {
   const parts = [
     row.metric?.id,
     row.metric?.key,
+    displayMetricKey(row.metric?.key),
     row.metric?.source,
     row.metric?.origin_id,
     row.metric?.note,
@@ -229,13 +235,17 @@ function collectFilterValues(
   rows: ParsedMetricRow[],
   field: "key" | "source",
 ): string[] {
-  return Array.from(
+  const values = Array.from(
     new Set(
       rows
         .map((row) => row.metric?.[field])
         .filter((value): value is string => typeof value === "string" && value.length > 0),
     ),
-  ).sort((left, right) => left.localeCompare(right));
+  );
+
+  return values.sort((left, right) =>
+    field === "key" ? compareMetricKeys(left, right) : left.localeCompare(right),
+  );
 }
 
 function withSelectedFilterValue(options: string[], selected: string): string[] {
@@ -456,7 +466,9 @@ function groupRowsByField(
         ? field === "key"
           ? "No metric"
           : "No source"
-        : key,
+        : field === "key"
+          ? displayMetricKey(key)
+          : key,
     key,
     rows: groupedRows,
   }));
@@ -712,6 +724,7 @@ function renderRecord(
 
   const body = rowEl.createDiv({ cls: "metrics-lens-record-body" });
   const marker = body.createSpan({ cls: "metrics-lens-record-marker" });
+  const metricKeyLabel = displayMetricKey(row.metric?.key);
   const iconId =
     plugin.settings.showMetricIcons && typeof row.metric?.key === "string"
       ? metricIconForKey(row.metric.key)
@@ -730,10 +743,13 @@ function renderRecord(
   }
 
   const main = body.createDiv({ cls: "metrics-lens-record-main" });
-  main.createSpan({
+  const metricKeyEl = main.createSpan({
     cls: "metrics-lens-record-key",
-    text: row.metric?.key ?? "Invalid row",
+    text: metricKeyLabel,
   });
+  if (typeof row.metric?.key === "string" && row.metric.key !== metricKeyLabel) {
+    metricKeyEl.setAttribute("title", row.metric.key);
+  }
 
   const metricValue = formatMetricValue(row);
   if (metricValue) {
@@ -763,7 +779,7 @@ function renderRecord(
     cls: ["clickable-icon", "metrics-lens-more-button"],
   });
   menuButton.type = "button";
-  menuButton.setAttribute("aria-label", `More actions for ${row.metric?.key ?? "record"}`);
+  menuButton.setAttribute("aria-label", `More actions for ${metricKeyLabel}`);
   menuButton.setAttribute("data-tooltip-position", "left");
   setIcon(menuButton, "more-horizontal");
   menuButton.addEventListener("click", (event) => {
@@ -1302,10 +1318,11 @@ export class MetricsFileView extends TextFileView {
       value: "",
     });
     availableKeys.forEach((key) => {
-      keySelect.createEl("option", {
-        text: key,
+      const option = keySelect.createEl("option", {
+        text: displayMetricOption(key),
         value: key,
       });
+      option.title = key;
     });
     keySelect.value = this.viewState.key;
     keySelect.addEventListener("change", () => {

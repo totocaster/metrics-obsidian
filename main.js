@@ -27,12 +27,416 @@ var import_obsidian6 = require("obsidian");
 
 // src/metric-record-modal.ts
 var import_obsidian = require("obsidian");
+
+// src/metric-catalog.json
+var metric_catalog_default = {
+  version: 1,
+  categories: {
+    activity: {
+      iconCandidates: ["gauge", "activity", "zap"],
+      label: "Activity"
+    },
+    body: {
+      iconCandidates: ["scale", "dumbbell", "activity"],
+      label: "Body"
+    },
+    medication: {
+      iconCandidates: ["syringe", "pill"],
+      label: "Medication"
+    },
+    nutrition: {
+      iconCandidates: ["flame", "utensils"],
+      label: "Nutrition"
+    },
+    recovery: {
+      iconCandidates: ["battery-full", "battery", "heart", "activity"],
+      label: "Recovery"
+    },
+    sleep: {
+      iconCandidates: ["moon-star", "moon", "bed"],
+      label: "Sleep"
+    }
+  },
+  metrics: {
+    "activity.strain": {
+      allowedUnits: ["score"],
+      category: "activity",
+      defaultUnit: "score",
+      fractionDigits: 0,
+      label: "Activity strain"
+    },
+    "body.body_fat_pct": {
+      allowedUnits: ["percent"],
+      category: "body",
+      defaultUnit: "percent",
+      fractionDigits: 1,
+      iconCandidates: ["percent", "activity"],
+      label: "Body fat"
+    },
+    "body.weight": {
+      allowedUnits: ["kg"],
+      category: "body",
+      defaultUnit: "kg",
+      fractionDigits: 1,
+      iconCandidates: ["scale", "dumbbell", "activity"],
+      label: "Body weight"
+    },
+    "medication.semaglutide_dose": {
+      allowedUnits: ["mg"],
+      category: "medication",
+      defaultUnit: "mg",
+      fractionDigits: 2,
+      iconCandidates: ["syringe", "pill"],
+      label: "Semaglutide dose"
+    },
+    "nutrition.calories": {
+      allowedUnits: ["kcal"],
+      category: "nutrition",
+      defaultUnit: "kcal",
+      fractionDigits: 0,
+      iconCandidates: ["flame", "utensils"],
+      label: "Calories"
+    },
+    "recovery.resting_hr": {
+      allowedUnits: ["bpm"],
+      category: "recovery",
+      defaultUnit: "bpm",
+      fractionDigits: 0,
+      iconCandidates: ["heart-pulse", "heart", "activity"],
+      label: "Resting heart rate"
+    },
+    "recovery.score": {
+      allowedUnits: ["score", "percent"],
+      category: "recovery",
+      defaultUnit: "score",
+      fractionDigits: 0,
+      iconCandidates: ["battery-full", "battery", "heart", "activity"],
+      label: "Recovery score"
+    },
+    "sleep.duration": {
+      allowedUnits: ["hours", "min", "sec"],
+      category: "sleep",
+      defaultUnit: "min",
+      fractionDigits: 0,
+      iconCandidates: ["moon-star", "moon", "bed"],
+      label: "Sleep duration"
+    },
+    "sleep.performance": {
+      allowedUnits: ["score", "percent"],
+      category: "sleep",
+      defaultUnit: "score",
+      fractionDigits: 0,
+      iconCandidates: ["bed", "moon", "activity"],
+      label: "Sleep performance"
+    }
+  },
+  units: {
+    C: {
+      aliases: ["c", "celsius"],
+      display: "\xB0C",
+      fractionDigits: 1,
+      label: "Celsius"
+    },
+    F: {
+      aliases: ["f", "fahrenheit"],
+      display: "\xB0F",
+      fractionDigits: 1,
+      label: "Fahrenheit"
+    },
+    bpm: {
+      aliases: [],
+      display: "bpm",
+      fractionDigits: 0,
+      label: "Beats per minute"
+    },
+    "br/min": {
+      aliases: [],
+      display: "br/min",
+      fractionDigits: 0,
+      label: "Breaths per minute"
+    },
+    count: {
+      aliases: [],
+      display: "count",
+      fractionDigits: 0,
+      label: "Count"
+    },
+    g: {
+      aliases: ["gram", "grams"],
+      display: "g",
+      fractionDigits: 0,
+      label: "Grams"
+    },
+    hours: {
+      aliases: ["hour", "hr", "hrs"],
+      display: "hr",
+      durationUnit: "hours",
+      label: "Hours"
+    },
+    kcal: {
+      aliases: [],
+      display: "kcal",
+      fractionDigits: 0,
+      label: "Kilocalories"
+    },
+    kg: {
+      aliases: ["kilogram", "kilograms"],
+      display: "kg",
+      fractionDigits: 1,
+      label: "Kilograms"
+    },
+    km: {
+      aliases: ["kilometer", "kilometers"],
+      display: "km",
+      fractionDigits: 2,
+      label: "Kilometers"
+    },
+    mg: {
+      aliases: ["milligram", "milligrams"],
+      display: "mg",
+      fractionDigits: 2,
+      label: "Milligrams"
+    },
+    min: {
+      aliases: ["minute", "minutes"],
+      display: "min",
+      durationUnit: "min",
+      label: "Minutes"
+    },
+    ml: {
+      aliases: ["milliliter", "milliliters"],
+      display: "ml",
+      fractionDigits: 0,
+      label: "Milliliters"
+    },
+    mmHg: {
+      aliases: ["mmhg"],
+      display: "mmHg",
+      fractionDigits: 0,
+      label: "Millimeters of mercury"
+    },
+    ms: {
+      aliases: ["millisecond", "milliseconds"],
+      display: "ms",
+      fractionDigits: 0,
+      label: "Milliseconds"
+    },
+    percent: {
+      aliases: ["%", "pct"],
+      display: "%",
+      fractionDigits: 1,
+      label: "Percent"
+    },
+    score: {
+      aliases: [],
+      display: "score",
+      fractionDigits: 0,
+      label: "Score"
+    },
+    sec: {
+      aliases: ["s", "second", "seconds"],
+      display: "sec",
+      durationUnit: "sec",
+      label: "Seconds"
+    }
+  }
+};
+
+// src/metric-catalog.ts
+var DEFAULT_ICON_CANDIDATES = ["activity"];
+function trimToNull(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+function normalizeLookupValue(value) {
+  return value.trim().toLowerCase();
+}
+function validateMetricCatalog(data) {
+  const categories = new Set(Object.keys(data.categories));
+  const units = new Set(Object.keys(data.units));
+  const seenAliases = /* @__PURE__ */ new Map();
+  Object.entries(data.units).forEach(([unitKey, unit]) => {
+    const aliases = [unitKey, ...unit.aliases ?? []];
+    aliases.forEach((alias) => {
+      const normalizedAlias = normalizeLookupValue(alias);
+      const existing = seenAliases.get(normalizedAlias);
+      if (existing && existing !== unitKey) {
+        throw new Error(`Metric catalog unit alias conflict: ${alias} maps to both ${existing} and ${unitKey}.`);
+      }
+      seenAliases.set(normalizedAlias, unitKey);
+    });
+  });
+  Object.entries(data.metrics).forEach(([metricKey, metric]) => {
+    if (!categories.has(metric.category)) {
+      throw new Error(`Metric catalog category missing for ${metricKey}: ${metric.category}.`);
+    }
+    metric.allowedUnits.forEach((unitKey) => {
+      if (!units.has(unitKey)) {
+        throw new Error(`Metric catalog unit missing for ${metricKey}: ${unitKey}.`);
+      }
+    });
+    if (metric.defaultUnit && !metric.allowedUnits.includes(metric.defaultUnit)) {
+      throw new Error(`Metric catalog default unit for ${metricKey} must be part of allowedUnits.`);
+    }
+  });
+  return data;
+}
+var metricCatalog = validateMetricCatalog(metric_catalog_default);
+var metricKeys = Object.keys(metricCatalog.metrics).sort((left, right) => left.localeCompare(right));
+var unitKeys = Object.keys(metricCatalog.units).sort((left, right) => left.localeCompare(right));
+var unitKeysByAlias = /* @__PURE__ */ new Map();
+unitKeys.forEach((unitKey) => {
+  const unit = metricCatalog.units[unitKey];
+  [unitKey, ...unit.aliases ?? []].forEach((alias) => {
+    unitKeysByAlias.set(normalizeLookupValue(alias), unitKey);
+  });
+});
+function categoryKeyForMetric(metricKey) {
+  const explicitCategory = metricCatalog.metrics[metricKey]?.category;
+  if (explicitCategory) {
+    return explicitCategory;
+  }
+  const [prefix] = metricKey.split(".", 1);
+  return prefix && metricCatalog.categories[prefix] ? prefix : null;
+}
+function allMetricKeys() {
+  return [...metricKeys];
+}
+function allUnitKeys() {
+  return [...unitKeys];
+}
+function canonicalMetricUnit(unit) {
+  const trimmed = trimToNull(unit);
+  if (!trimmed) {
+    return null;
+  }
+  return unitKeysByAlias.get(normalizeLookupValue(trimmed)) ?? null;
+}
+function displayMetricKey(metricKey) {
+  const trimmed = trimToNull(metricKey);
+  if (!trimmed) {
+    return "Invalid row";
+  }
+  return metricCatalog.metrics[trimmed]?.label ?? trimmed;
+}
+function displayMetricOption(metricKey) {
+  const label = displayMetricKey(metricKey);
+  return label === metricKey ? metricKey : `${label} (${metricKey})`;
+}
+function displayMetricUnit(unit) {
+  const normalizedUnitKey = normalizeMetricUnitKey(unit);
+  if (!normalizedUnitKey) {
+    return null;
+  }
+  return metricCatalog.units[normalizedUnitKey]?.display ?? normalizedUnitKey;
+}
+function displayMetricUnitLabel(unit) {
+  const normalizedUnitKey = normalizeMetricUnitKey(unit);
+  if (!normalizedUnitKey) {
+    return null;
+  }
+  return metricCatalog.units[normalizedUnitKey]?.label ?? normalizedUnitKey;
+}
+function displayMetricUnitOption(unitKey) {
+  const display = displayMetricUnit(unitKey) ?? unitKey;
+  const label = displayMetricUnitLabel(unitKey) ?? unitKey;
+  return display === label ? display : `${display} (${label})`;
+}
+function getMetricCategory(metricKey) {
+  const trimmed = trimToNull(metricKey);
+  if (!trimmed) {
+    return null;
+  }
+  const categoryKey = categoryKeyForMetric(trimmed);
+  return categoryKey ? metricCatalog.categories[categoryKey] ?? null : null;
+}
+function getMetricDefinition(metricKey) {
+  const trimmed = trimToNull(metricKey);
+  if (!trimmed) {
+    return null;
+  }
+  return metricCatalog.metrics[trimmed] ?? null;
+}
+function getMetricIconCandidates(metricKey) {
+  const trimmed = trimToNull(metricKey);
+  if (!trimmed) {
+    return [...DEFAULT_ICON_CANDIDATES];
+  }
+  return getMetricDefinition(trimmed)?.iconCandidates ?? getMetricCategory(trimmed)?.iconCandidates ?? DEFAULT_ICON_CANDIDATES;
+}
+function getMetricUnitDefinition(unit) {
+  const canonicalUnitKey = canonicalMetricUnit(unit);
+  return canonicalUnitKey ? metricCatalog.units[canonicalUnitKey] ?? null : null;
+}
+function getMetricFractionDigits(metricKey, unit) {
+  const metricDefinition = getMetricDefinition(metricKey);
+  if (typeof metricDefinition?.fractionDigits === "number") {
+    return metricDefinition.fractionDigits;
+  }
+  const unitDefinition = getMetricUnitDefinition(unit);
+  if (typeof unitDefinition?.fractionDigits === "number") {
+    return unitDefinition.fractionDigits;
+  }
+  return null;
+}
+function getMetricDurationUnit(unit) {
+  return getMetricUnitDefinition(unit)?.durationUnit ?? null;
+}
+function getSupportedUnitsForMetric(metricKey) {
+  return getMetricDefinition(metricKey)?.allowedUnits ?? [];
+}
+function getDefaultUnitForMetric(metricKey) {
+  return getMetricDefinition(metricKey)?.defaultUnit ?? null;
+}
+function hasKnownMetricKey(metricKey) {
+  return getMetricDefinition(metricKey) !== null;
+}
+function hasKnownMetricUnit(unit) {
+  return canonicalMetricUnit(unit) !== null;
+}
+function isUnitAllowedForMetric(metricKey, unit) {
+  const metricDefinition = getMetricDefinition(metricKey);
+  if (!metricDefinition) {
+    return null;
+  }
+  const canonicalUnitKey = canonicalMetricUnit(unit);
+  if (!canonicalUnitKey) {
+    return null;
+  }
+  return metricDefinition.allowedUnits.includes(canonicalUnitKey);
+}
+function normalizeMetricUnitKey(unit) {
+  const canonicalUnitKey = canonicalMetricUnit(unit);
+  if (canonicalUnitKey) {
+    return canonicalUnitKey;
+  }
+  return trimToNull(unit);
+}
+function compareMetricKeys(left, right) {
+  const leftLabel = displayMetricKey(left);
+  const rightLabel = displayMetricKey(right);
+  const labelComparison = leftLabel.localeCompare(rightLabel);
+  return labelComparison !== 0 ? labelComparison : left.localeCompare(right);
+}
+
+// src/metric-record-modal.ts
 function currentIsoTimestamp() {
   return (/* @__PURE__ */ new Date()).toISOString();
 }
 function trimOrUndefined(value) {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : void 0;
+}
+function populateDatalist(datalist, values, labelForValue) {
+  datalist.empty();
+  values.forEach((value) => {
+    const option = datalist.createEl("option");
+    option.value = value;
+    option.label = labelForValue(value);
+  });
 }
 var MetricRecordModal = class extends import_obsidian.Modal {
   options;
@@ -57,6 +461,26 @@ var MetricRecordModal = class extends import_obsidian.Modal {
     let note = initial?.note ?? "";
     let tags = initial?.tags?.join(", ") ?? "";
     let context = initial?.context ? JSON.stringify(initial.context, null, 2) : "";
+    const inputIdSuffix = Math.random().toString(36).slice(2, 8);
+    const keySuggestionsId = `metrics-lens-key-suggestions-${inputIdSuffix}`;
+    const unitSuggestionsId = `metrics-lens-unit-suggestions-${inputIdSuffix}`;
+    let unitInputEl = null;
+    const keySuggestions = contentEl.createEl("datalist");
+    keySuggestions.id = keySuggestionsId;
+    populateDatalist(keySuggestions, allMetricKeys(), displayMetricKey);
+    const unitSuggestions = contentEl.createEl("datalist");
+    unitSuggestions.id = unitSuggestionsId;
+    const syncUnitSuggestions = () => {
+      const supportedUnits = getSupportedUnitsForMetric(key.trim());
+      populateDatalist(
+        unitSuggestions,
+        supportedUnits.length > 0 ? supportedUnits : allUnitKeys(),
+        displayMetricUnitOption
+      );
+      if (unitInputEl) {
+        unitInputEl.placeholder = getDefaultUnitForMetric(key.trim()) ?? "kg";
+      }
+    };
     new import_obsidian.Setting(contentEl).setName("Timestamp").setDesc("ISO-8601 timestamp with timezone.").addText((text) => {
       text.setPlaceholder("2026-04-14T09:30:00+04:00");
       text.setValue(ts);
@@ -71,11 +495,13 @@ var MetricRecordModal = class extends import_obsidian.Modal {
         date = nextValue;
       });
     });
-    new import_obsidian.Setting(contentEl).setName("Key").setDesc("Canonical metric key.").addText((text) => {
+    new import_obsidian.Setting(contentEl).setName("Key").setDesc("Canonical metric key. Known keys are suggested from the built-in catalog.").addText((text) => {
       text.setPlaceholder("body.weight");
       text.setValue(key);
+      text.inputEl.setAttribute("list", keySuggestionsId);
       text.onChange((nextValue) => {
         key = nextValue;
+        syncUnitSuggestions();
       });
     });
     new import_obsidian.Setting(contentEl).setName("Value").setDesc("Numeric metric value.").addText((text) => {
@@ -87,8 +513,10 @@ var MetricRecordModal = class extends import_obsidian.Modal {
         value = nextValue;
       });
     });
-    new import_obsidian.Setting(contentEl).setName("Unit").setDesc("Optional display unit.").addText((text) => {
-      text.setPlaceholder("kg");
+    new import_obsidian.Setting(contentEl).setName("Unit").setDesc("Optional display unit. Catalog-backed suggestions follow the current key.").addText((text) => {
+      unitInputEl = text.inputEl;
+      text.inputEl.setAttribute("list", unitSuggestionsId);
+      text.setPlaceholder(getDefaultUnitForMetric(key.trim()) ?? "kg");
       text.setValue(unit);
       text.onChange((nextValue) => {
         unit = nextValue;
@@ -130,6 +558,7 @@ var MetricRecordModal = class extends import_obsidian.Modal {
     contextTextarea.addEventListener("input", () => {
       context = contextTextarea.value;
     });
+    syncUnitSuggestions();
     const buttonRow = contentEl.createDiv({ cls: "metrics-lens-actions" });
     const cancelButton = buttonRow.createEl("button", { text: "Cancel" });
     cancelButton.addEventListener("click", () => {
@@ -641,17 +1070,7 @@ var import_obsidian5 = require("obsidian");
 
 // src/metric-value-format.ts
 function normalizeDurationUnit(unit) {
-  if (!unit) {
-    return null;
-  }
-  const normalizedUnit = unit.trim().toLowerCase();
-  if (normalizedUnit === "min") {
-    return "min";
-  }
-  if (normalizedUnit === "sec") {
-    return "sec";
-  }
-  return null;
+  return getMetricDurationUnit(unit);
 }
 var MAX_AUTO_FRACTION_DIGITS = 2;
 var MAX_RAW_FRACTION_DIGITS = 6;
@@ -689,23 +1108,29 @@ function rawValuePrecision(rawLine) {
 function resolveMetricFractionDigits(metricKey, unit, options) {
   const normalizedMetricKey = normalizeMetricKey(metricKey);
   const normalizedUnit = normalizeUnit(unit);
-  if (normalizedMetricKey === "body.weight") {
+  const canonicalUnit = canonicalMetricUnit(unit);
+  const catalogFractionDigits = getMetricFractionDigits(metricKey, unit);
+  if (typeof catalogFractionDigits === "number") {
+    return fixedFractionDigits(catalogFractionDigits);
+  }
+  if (normalizedMetricKey.endsWith("_pct") || canonicalUnit === "percent" || normalizedUnit === "%" || normalizedUnit === "percent") {
     return fixedFractionDigits(1);
   }
-  if (normalizedMetricKey.endsWith("_pct") || normalizedUnit === "%" || normalizedUnit === "percent") {
+  if (normalizedMetricKey.includes("temperature") || canonicalUnit === "C" || canonicalUnit === "F" || normalizedUnit === "c" || normalizedUnit === "f") {
     return fixedFractionDigits(1);
   }
-  if (normalizedMetricKey.includes("temperature") || normalizedUnit === "c" || normalizedUnit === "f") {
-    return fixedFractionDigits(1);
-  }
-  if (normalizedUnit === "bpm" || normalizedUnit === "br/min" || normalizedUnit === "count" || normalizedUnit === "kcal" || normalizedUnit === "mmhg" || normalizedUnit === "score") {
+  if (canonicalUnit === "bpm" || canonicalUnit === "br/min" || canonicalUnit === "count" || canonicalUnit === "kcal" || canonicalUnit === "mmHg" || canonicalUnit === "score") {
     return fixedFractionDigits(0);
   }
   return defaultFractionDigits(options?.rawPrecision);
 }
 function formatDurationValue(value, durationUnit) {
   const sign = value < 0 ? "-" : "";
-  const totalSeconds = Math.round(Math.abs(durationUnit === "min" ? value * 60 : value));
+  const totalSeconds = Math.round(
+    Math.abs(
+      durationUnit === "hours" ? value * 3600 : durationUnit === "min" ? value * 60 : value
+    )
+  );
   if (totalSeconds === 0) {
     return "0s";
   }
@@ -744,8 +1169,9 @@ function formatMetricDisplayValue(value, unit, options) {
     maximumFractionDigits: digits.maximumFractionDigits,
     minimumFractionDigits: digits.minimumFractionDigits
   });
-  if (options?.includeUnit && typeof unit === "string" && unit.length > 0) {
-    return `${formattedValue} ${unit}`;
+  const unitDisplay = displayMetricUnit(unit) ?? (typeof unit === "string" && unit.trim().length > 0 ? unit.trim() : null);
+  if (options?.includeUnit && unitDisplay) {
+    return `${formattedValue} ${unitDisplay}`;
   }
   return formattedValue;
 }
@@ -936,7 +1362,7 @@ function buildDailyPanel(rows, unitKey, unitLabel) {
     segments.push({
       bucketKey,
       key,
-      label: key,
+      label: displayMetricKey(key),
       lineNumbers: [row.lineNumber],
       precision: rawRowValuePrecision(row),
       timestamp: rowTimestamp(row) ?? bucketTimestamp,
@@ -958,12 +1384,12 @@ function buildDailyPanel(rows, unitKey, unitLabel) {
       if (left.timestamp !== null && right.timestamp !== null && left.timestamp !== right.timestamp) {
         return left.timestamp - right.timestamp;
       }
-      return left.key.localeCompare(right.key);
+      return compareMetricKeys(left.key, right.key);
     });
   });
   const series = seriesOrder.map((key) => ({
     key,
-    label: key,
+    label: displayMetricKey(key),
     points: []
   }));
   const valueRange = collectStackedValueRange(stackSegments);
@@ -1048,7 +1474,7 @@ function buildTemporalPanel(rows, unitKey, unitLabel, bucketByDay) {
     }
     return {
       key,
-      label: key,
+      label: displayMetricKey(key),
       points: buckets.map((bucket) => pointMap.get(bucket.key)).filter((point) => point !== void 0)
     };
   }).filter((entry) => entry !== null);
@@ -1127,7 +1553,7 @@ function buildSourcePanel(rows, unitKey, unitLabel) {
     }
     return {
       key,
-      label: key,
+      label: displayMetricKey(key),
       points: buckets.map((bucket) => pointMap.get(bucket.key)).filter((point) => point !== void 0)
     };
   }).filter((entry) => entry !== null);
@@ -1165,7 +1591,7 @@ function buildKeyPanel(rows, unitKey, unitLabel) {
   const bucketLineNumbers = /* @__PURE__ */ new Map();
   const bucketDefs = buckets.map((key) => ({
     key,
-    label: key,
+    label: key === "No metric" ? key : displayMetricKey(key),
     lineNumbers: bucketLineNumbers.get(key) ?? [],
     timestamp: null
   }));
@@ -1198,7 +1624,7 @@ function buildKeyPanel(rows, unitKey, unitLabel) {
   const series = [
     {
       key: "value",
-      label: unitLabel ?? "Value",
+      label: "Value",
       points: bucketDefs.map((bucket) => pointMap.get(bucket.key)).filter((point) => point !== void 0)
     }
   ];
@@ -1235,16 +1661,14 @@ function buildMetricsChartModel(rows, groupBy) {
   }
   const unitOrder = uniqueStrings(
     plottableRows.map((row) => {
-      const unit = row.metric?.unit;
-      return typeof unit === "string" && unit.length > 0 ? unit : NO_UNIT_KEY;
+      return normalizeMetricUnitKey(row.metric?.unit) ?? NO_UNIT_KEY;
     })
   );
   const panels = unitOrder.map((unitKey) => {
     const unitRows = plottableRows.filter((row) => {
-      const unit = row.metric?.unit;
-      return (typeof unit === "string" && unit.length > 0 ? unit : NO_UNIT_KEY) === unitKey;
+      return (normalizeMetricUnitKey(row.metric?.unit) ?? NO_UNIT_KEY) === unitKey;
     });
-    const unitLabel = unitKey === NO_UNIT_KEY ? null : unitKey;
+    const unitLabel = unitKey === NO_UNIT_KEY ? null : displayMetricUnit(unitKey) ?? unitKey;
     if (groupBy === "day") {
       return buildDailyPanel(unitRows, unitKey, unitLabel);
     }
@@ -1514,7 +1938,11 @@ function appendYAxis(svg, panel) {
       x: PLOT_LEFT - 8,
       y: y + 4
     });
-    label.textContent = formatChartAxisValue(value, panel.axisPrecision, panel.unitLabel);
+    label.textContent = formatChartAxisValue(
+      value,
+      panel.axisPrecision,
+      panel.unitKey === NO_UNIT_KEY ? null : panel.unitKey
+    );
     svg.appendChild(label);
   });
   const zeroY = yForValue(baselineValue);
@@ -1680,7 +2108,12 @@ function renderTooltip(tooltipEl, panel, target) {
     });
     row.createSpan({
       cls: "metrics-lens-chart-tooltip-value",
-      text: formatChartTooltipValue(entry.value, entry.metricKey, entry.precision, panel.unitLabel)
+      text: formatChartTooltipValue(
+        entry.value,
+        entry.metricKey,
+        entry.precision,
+        panel.unitKey === NO_UNIT_KEY ? null : panel.unitKey
+      )
     });
   });
 }
@@ -1949,6 +2382,10 @@ function renderLegend(container, panel, state, onChange) {
 }
 function chartPanelTitle(panel) {
   const seriesLabels = panel.series.map((entry) => entry.label);
+  const hasValueSeriesOnly = seriesLabels.length === 1 && seriesLabels[0] === "Value";
+  if (panel.unitLabel && hasValueSeriesOnly) {
+    return panel.unitLabel;
+  }
   if (panel.unitLabel && seriesLabels.length === 1) {
     return `${seriesLabels[0]} (${panel.unitLabel})`;
   }
@@ -2023,49 +2460,8 @@ function availableIconIds() {
   }
   return cachedIconIds;
 }
-function metricIconCandidates(metricKey) {
-  switch (metricKey) {
-    case "body.weight":
-      return ["scale", "dumbbell", "activity"];
-    case "body.body_fat_pct":
-      return ["percent", "activity"];
-    case "nutrition.calories":
-      return ["flame", "utensils"];
-    case "sleep.duration":
-      return ["moon-star", "moon", "bed"];
-    case "sleep.performance":
-      return ["bed", "moon", "activity"];
-    case "recovery.score":
-      return ["battery-full", "battery", "heart", "activity"];
-    case "recovery.resting_hr":
-      return ["heart-pulse", "heart", "activity"];
-    case "activity.strain":
-      return ["gauge", "activity", "zap"];
-    case "medication.semaglutide_dose":
-      return ["syringe", "pill"];
-  }
-  if (metricKey.startsWith("body.")) {
-    return ["scale", "dumbbell", "activity"];
-  }
-  if (metricKey.startsWith("nutrition.")) {
-    return ["flame", "utensils"];
-  }
-  if (metricKey.startsWith("sleep.")) {
-    return ["moon-star", "moon", "bed"];
-  }
-  if (metricKey.startsWith("recovery.")) {
-    return ["battery-full", "battery", "heart", "activity"];
-  }
-  if (metricKey.startsWith("activity.")) {
-    return ["gauge", "activity", "zap"];
-  }
-  if (metricKey.startsWith("medication.")) {
-    return ["syringe", "pill"];
-  }
-  return ["activity"];
-}
 function metricIconForKey(metricKey) {
-  const candidates = metricIconCandidates(metricKey);
+  const candidates = getMetricIconCandidates(metricKey);
   const available = availableIconIds();
   for (const candidate of candidates) {
     if (available.has(candidate)) {
@@ -2079,23 +2475,6 @@ function metricIconForKey(metricKey) {
 var DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 var ISO_TS_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
 var ULID_RE = /^[0-9A-HJKMNP-TV-Z]{26}$/;
-var KNOWN_UNITS = /* @__PURE__ */ new Set([
-  "bpm",
-  "br/min",
-  "C",
-  "count",
-  "g",
-  "hours",
-  "kcal",
-  "kg",
-  "km",
-  "min",
-  "ml",
-  "mmHg",
-  "ms",
-  "percent",
-  "score"
-]);
 function addIssue(row, issue) {
   const exists = row.issues.some(
     (existing) => existing.code === issue.code && existing.field === issue.field && existing.message === issue.message && existing.severity === issue.severity
@@ -2118,6 +2497,9 @@ function isObjectRecord2(value) {
 }
 function isStringArray(value) {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+function formatAllowedUnits(units) {
+  return units.map((unit) => `\`${unit}\``).join(", ");
 }
 function validateObjectShape(row, parsed) {
   const id = parsed.id;
@@ -2177,6 +2559,14 @@ function validateObjectShape(row, parsed) {
       ...row.metric,
       key
     };
+    if (!hasKnownMetricKey(key)) {
+      addIssue(row, {
+        code: "unknown_key",
+        field: "key",
+        message: `Unknown metric key \`${key}\`.`,
+        severity: "warning"
+      });
+    }
   }
   const value = parsed.value;
   if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -2236,13 +2626,24 @@ function validateObjectShape(row, parsed) {
         ...row.metric,
         unit
       };
-      if (!KNOWN_UNITS.has(unit)) {
+      if (!hasKnownMetricUnit(unit)) {
         addIssue(row, {
           code: "unknown_unit",
           field: "unit",
           message: `Unknown unit \`${unit}\`.`,
           severity: "warning"
         });
+      } else {
+        const keyValue = typeof row.metric?.key === "string" ? row.metric.key : null;
+        const unitAllowed = isUnitAllowedForMetric(keyValue, unit);
+        if (unitAllowed === false) {
+          addIssue(row, {
+            code: "unsupported_unit_for_key",
+            field: "unit",
+            message: `Metric key \`${keyValue}\` does not support unit \`${canonicalMetricUnit(unit) ?? unit}\`. Allowed units: ${formatAllowedUnits(getSupportedUnitsForMetric(keyValue))}.`,
+            severity: "warning"
+          });
+        }
       }
     }
   }
@@ -2334,7 +2735,7 @@ function collectUnitsByKey(rows) {
   const unitsByKey = /* @__PURE__ */ new Map();
   rows.forEach((row) => {
     const key = row.metric?.key;
-    const unit = row.metric?.unit;
+    const unit = normalizeMetricUnitKey(row.metric?.unit);
     if (typeof key !== "string" || typeof unit !== "string") {
       return;
     }
@@ -2643,6 +3044,7 @@ function rowSearchText(row) {
   const parts = [
     row.metric?.id,
     row.metric?.key,
+    displayMetricKey(row.metric?.key),
     row.metric?.source,
     row.metric?.origin_id,
     row.metric?.note,
@@ -2656,11 +3058,14 @@ function rowSearchText(row) {
   return parts.filter((value) => typeof value === "string" && value.length > 0).join(" ").toLowerCase();
 }
 function collectFilterValues(rows, field) {
-  return Array.from(
+  const values = Array.from(
     new Set(
       rows.map((row) => row.metric?.[field]).filter((value) => typeof value === "string" && value.length > 0)
     )
-  ).sort((left, right) => left.localeCompare(right));
+  );
+  return values.sort(
+    (left, right) => field === "key" ? compareMetricKeys(left, right) : left.localeCompare(right)
+  );
 }
 function withSelectedFilterValue(options, selected) {
   if (selected.length === 0 || options.includes(selected)) {
@@ -2816,7 +3221,7 @@ function groupRowsByField(rows, field) {
     groups.set(key, current);
   });
   return Array.from(groups.entries()).map(([key, groupedRows2]) => ({
-    heading: key === "__empty__" ? field === "key" ? "No metric" : "No source" : key,
+    heading: key === "__empty__" ? field === "key" ? "No metric" : "No source" : field === "key" ? displayMetricKey(key) : key,
     key,
     rows: groupedRows2
   }));
@@ -3013,6 +3418,7 @@ function renderRecord(container, row, plugin, file, referencePrefix, options) {
   }
   const body = rowEl.createDiv({ cls: "metrics-lens-record-body" });
   const marker = body.createSpan({ cls: "metrics-lens-record-marker" });
+  const metricKeyLabel = displayMetricKey(row.metric?.key);
   const iconId = plugin.settings.showMetricIcons && typeof row.metric?.key === "string" ? metricIconForKey(row.metric.key) : null;
   if (iconId) {
     marker.setAttribute("aria-hidden", "true");
@@ -3027,10 +3433,13 @@ function renderRecord(container, row, plugin, file, referencePrefix, options) {
     }
   }
   const main = body.createDiv({ cls: "metrics-lens-record-main" });
-  main.createSpan({
+  const metricKeyEl = main.createSpan({
     cls: "metrics-lens-record-key",
-    text: row.metric?.key ?? "Invalid row"
+    text: metricKeyLabel
   });
+  if (typeof row.metric?.key === "string" && row.metric.key !== metricKeyLabel) {
+    metricKeyEl.setAttribute("title", row.metric.key);
+  }
   const metricValue = formatMetricValue(row);
   if (metricValue) {
     main.createSpan({
@@ -3055,7 +3464,7 @@ function renderRecord(container, row, plugin, file, referencePrefix, options) {
     cls: ["clickable-icon", "metrics-lens-more-button"]
   });
   menuButton.type = "button";
-  menuButton.setAttribute("aria-label", `More actions for ${row.metric?.key ?? "record"}`);
+  menuButton.setAttribute("aria-label", `More actions for ${metricKeyLabel}`);
   menuButton.setAttribute("data-tooltip-position", "left");
   (0, import_obsidian5.setIcon)(menuButton, "more-horizontal");
   menuButton.addEventListener("click", (event) => {
@@ -3506,10 +3915,11 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
       value: ""
     });
     availableKeys.forEach((key) => {
-      keySelect.createEl("option", {
-        text: key,
+      const option = keySelect.createEl("option", {
+        text: displayMetricOption(key),
         value: key
       });
+      option.title = key;
     });
     keySelect.value = this.viewState.key;
     keySelect.addEventListener("change", () => {

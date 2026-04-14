@@ -4,7 +4,7 @@
 
 - Status: active and implemented for the current-file metrics view
 - Target phase: current-file charting inside the existing metrics view
-- Implemented so far: per-file `show chart` toggle in the title bar, chart placement above the filter bar when visible, native SVG rendering, stacked day bars, hover crosshair/tooltip, interactive legends, adaptive axis formatting, and chart-to-timeline row focus
+- Implemented so far: per-file `show chart` toggle in the title bar, chart placement above the filter bar when visible, native SVG rendering, stacked day bars, hover crosshair/tooltip, interactive legends, adaptive axis formatting, catalog-backed series and unit labels, and chart-to-timeline row focus
 - Not implemented yet: grouped-section-specific charts and deeper drill-down modes
 
 ## Goals
@@ -90,6 +90,7 @@ Recommended internal model:
 ### Series identity
 
 - Default series identity is `metric key`.
+- Display labels should come from the built-in metric catalog when the key is known.
 - Color is stable per metric key.
 - If multiple metric keys are visible, render multiple series.
 - If only one metric key is visible, render a single series.
@@ -97,6 +98,7 @@ Recommended internal model:
 ### Unit handling
 
 - Do not combine incompatible units on the same y-axis.
+- Normalize catalog unit aliases before deciding whether rows share a chart panel.
 - If visible rows contain multiple units, split into separate stacked chart panels by unit.
 - Example:
   - `body.weight` in `kg` becomes one chart

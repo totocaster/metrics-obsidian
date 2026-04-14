@@ -1,0 +1,212 @@
+{
+  "version": 1,
+  "categories": {
+    "activity": {
+      "iconCandidates": ["gauge", "activity", "zap"],
+      "label": "Activity"
+    },
+    "body": {
+      "iconCandidates": ["scale", "dumbbell", "activity"],
+      "label": "Body"
+    },
+    "medication": {
+      "iconCandidates": ["syringe", "pill"],
+      "label": "Medication"
+    },
+    "nutrition": {
+      "iconCandidates": ["flame", "utensils"],
+      "label": "Nutrition"
+    },
+    "recovery": {
+      "iconCandidates": ["battery-full", "battery", "heart", "activity"],
+      "label": "Recovery"
+    },
+    "sleep": {
+      "iconCandidates": ["moon-star", "moon", "bed"],
+      "label": "Sleep"
+    }
+  },
+  "metrics": {
+    "activity.strain": {
+      "allowedUnits": ["score"],
+      "category": "activity",
+      "defaultUnit": "score",
+      "fractionDigits": 0,
+      "label": "Activity strain"
+    },
+    "body.body_fat_pct": {
+      "allowedUnits": ["percent"],
+      "category": "body",
+      "defaultUnit": "percent",
+      "fractionDigits": 1,
+      "iconCandidates": ["percent", "activity"],
+      "label": "Body fat"
+    },
+    "body.weight": {
+      "allowedUnits": ["kg"],
+      "category": "body",
+      "defaultUnit": "kg",
+      "fractionDigits": 1,
+      "iconCandidates": ["scale", "dumbbell", "activity"],
+      "label": "Body weight"
+    },
+    "medication.semaglutide_dose": {
+      "allowedUnits": ["mg"],
+      "category": "medication",
+      "defaultUnit": "mg",
+      "fractionDigits": 2,
+      "iconCandidates": ["syringe", "pill"],
+      "label": "Semaglutide dose"
+    },
+    "nutrition.calories": {
+      "allowedUnits": ["kcal"],
+      "category": "nutrition",
+      "defaultUnit": "kcal",
+      "fractionDigits": 0,
+      "iconCandidates": ["flame", "utensils"],
+      "label": "Calories"
+    },
+    "recovery.resting_hr": {
+      "allowedUnits": ["bpm"],
+      "category": "recovery",
+      "defaultUnit": "bpm",
+      "fractionDigits": 0,
+      "iconCandidates": ["heart-pulse", "heart", "activity"],
+      "label": "Resting heart rate"
+    },
+    "recovery.score": {
+      "allowedUnits": ["score", "percent"],
+      "category": "recovery",
+      "defaultUnit": "score",
+      "fractionDigits": 0,
+      "iconCandidates": ["battery-full", "battery", "heart", "activity"],
+      "label": "Recovery score"
+    },
+    "sleep.duration": {
+      "allowedUnits": ["hours", "min", "sec"],
+      "category": "sleep",
+      "defaultUnit": "min",
+      "fractionDigits": 0,
+      "iconCandidates": ["moon-star", "moon", "bed"],
+      "label": "Sleep duration"
+    },
+    "sleep.performance": {
+      "allowedUnits": ["score", "percent"],
+      "category": "sleep",
+      "defaultUnit": "score",
+      "fractionDigits": 0,
+      "iconCandidates": ["bed", "moon", "activity"],
+      "label": "Sleep performance"
+    }
+  },
+  "units": {
+    "C": {
+      "aliases": ["c", "celsius"],
+      "display": "\u00b0C",
+      "fractionDigits": 1,
+      "label": "Celsius"
+    },
+    "F": {
+      "aliases": ["f", "fahrenheit"],
+      "display": "\u00b0F",
+      "fractionDigits": 1,
+      "label": "Fahrenheit"
+    },
+    "bpm": {
+      "aliases": [],
+      "display": "bpm",
+      "fractionDigits": 0,
+      "label": "Beats per minute"
+    },
+    "br/min": {
+      "aliases": [],
+      "display": "br/min",
+      "fractionDigits": 0,
+      "label": "Breaths per minute"
+    },
+    "count": {
+      "aliases": [],
+      "display": "count",
+      "fractionDigits": 0,
+      "label": "Count"
+    },
+    "g": {
+      "aliases": ["gram", "grams"],
+      "display": "g",
+      "fractionDigits": 0,
+      "label": "Grams"
+    },
+    "hours": {
+      "aliases": ["hour", "hr", "hrs"],
+      "display": "hr",
+      "durationUnit": "hours",
+      "label": "Hours"
+    },
+    "kcal": {
+      "aliases": [],
+      "display": "kcal",
+      "fractionDigits": 0,
+      "label": "Kilocalories"
+    },
+    "kg": {
+      "aliases": ["kilogram", "kilograms"],
+      "display": "kg",
+      "fractionDigits": 1,
+      "label": "Kilograms"
+    },
+    "km": {
+      "aliases": ["kilometer", "kilometers"],
+      "display": "km",
+      "fractionDigits": 2,
+      "label": "Kilometers"
+    },
+    "mg": {
+      "aliases": ["milligram", "milligrams"],
+      "display": "mg",
+      "fractionDigits": 2,
+      "label": "Milligrams"
+    },
+    "min": {
+      "aliases": ["minute", "minutes"],
+      "display": "min",
+      "durationUnit": "min",
+      "label": "Minutes"
+    },
+    "ml": {
+      "aliases": ["milliliter", "milliliters"],
+      "display": "ml",
+      "fractionDigits": 0,
+      "label": "Milliliters"
+    },
+    "mmHg": {
+      "aliases": ["mmhg"],
+      "display": "mmHg",
+      "fractionDigits": 0,
+      "label": "Millimeters of mercury"
+    },
+    "ms": {
+      "aliases": ["millisecond", "milliseconds"],
+      "display": "ms",
+      "fractionDigits": 0,
+      "label": "Milliseconds"
+    },
+    "percent": {
+      "aliases": ["%", "pct"],
+      "display": "%",
+      "fractionDigits": 1,
+      "label": "Percent"
+    },
+    "score": {
+      "aliases": [],
+      "display": "score",
+      "fractionDigits": 0,
+      "label": "Score"
+    },
+    "sec": {
+      "aliases": ["s", "second", "seconds"],
+      "display": "sec",
+      "durationUnit": "sec",
+      "label": "Seconds"
+    }
+  }
+}

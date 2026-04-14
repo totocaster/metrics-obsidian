@@ -1,18 +1,12 @@
-function normalizeDurationUnit(unit: string | null | undefined): "min" | "sec" | null {
-  if (!unit) {
-    return null;
-  }
+import {
+  canonicalMetricUnit,
+  displayMetricUnit,
+  getMetricDurationUnit,
+  getMetricFractionDigits,
+} from "./metric-catalog";
 
-  const normalizedUnit = unit.trim().toLowerCase();
-  if (normalizedUnit === "min") {
-    return "min";
-  }
-
-  if (normalizedUnit === "sec") {
-    return "sec";
-  }
-
-  return null;
+function normalizeDurationUnit(unit: string | null | undefined): "hours" | "min" | "sec" | null {
+  return getMetricDurationUnit(unit);
 }
 
 const MAX_AUTO_FRACTION_DIGITS = 2;
@@ -72,13 +66,16 @@ export function resolveMetricFractionDigits(
 ): MetricFractionDigits {
   const normalizedMetricKey = normalizeMetricKey(metricKey);
   const normalizedUnit = normalizeUnit(unit);
+  const canonicalUnit = canonicalMetricUnit(unit);
+  const catalogFractionDigits = getMetricFractionDigits(metricKey, unit);
 
-  if (normalizedMetricKey === "body.weight") {
-    return fixedFractionDigits(1);
+  if (typeof catalogFractionDigits === "number") {
+    return fixedFractionDigits(catalogFractionDigits);
   }
 
   if (
     normalizedMetricKey.endsWith("_pct") ||
+    canonicalUnit === "percent" ||
     normalizedUnit === "%" ||
     normalizedUnit === "percent"
   ) {
@@ -87,6 +84,8 @@ export function resolveMetricFractionDigits(
 
   if (
     normalizedMetricKey.includes("temperature") ||
+    canonicalUnit === "C" ||
+    canonicalUnit === "F" ||
     normalizedUnit === "c" ||
     normalizedUnit === "f"
   ) {
@@ -94,12 +93,12 @@ export function resolveMetricFractionDigits(
   }
 
   if (
-    normalizedUnit === "bpm" ||
-    normalizedUnit === "br/min" ||
-    normalizedUnit === "count" ||
-    normalizedUnit === "kcal" ||
-    normalizedUnit === "mmhg" ||
-    normalizedUnit === "score"
+    canonicalUnit === "bpm" ||
+    canonicalUnit === "br/min" ||
+    canonicalUnit === "count" ||
+    canonicalUnit === "kcal" ||
+    canonicalUnit === "mmHg" ||
+    canonicalUnit === "score"
   ) {
     return fixedFractionDigits(0);
   }
@@ -107,9 +106,17 @@ export function resolveMetricFractionDigits(
   return defaultFractionDigits(options?.rawPrecision);
 }
 
-function formatDurationValue(value: number, durationUnit: "min" | "sec"): string {
+function formatDurationValue(value: number, durationUnit: "hours" | "min" | "sec"): string {
   const sign = value < 0 ? "-" : "";
-  const totalSeconds = Math.round(Math.abs(durationUnit === "min" ? value * 60 : value));
+  const totalSeconds = Math.round(
+    Math.abs(
+      durationUnit === "hours"
+        ? value * 3600
+        : durationUnit === "min"
+          ? value * 60
+          : value,
+    ),
+  );
 
   if (totalSeconds === 0) {
     return "0s";
@@ -172,8 +179,9 @@ export function formatMetricDisplayValue(
     minimumFractionDigits: digits.minimumFractionDigits,
   });
 
-  if (options?.includeUnit && typeof unit === "string" && unit.length > 0) {
-    return `${formattedValue} ${unit}`;
+  const unitDisplay = displayMetricUnit(unit) ?? (typeof unit === "string" && unit.trim().length > 0 ? unit.trim() : null);
+  if (options?.includeUnit && unitDisplay) {
+    return `${formattedValue} ${unitDisplay}`;
   }
 
   return formattedValue;

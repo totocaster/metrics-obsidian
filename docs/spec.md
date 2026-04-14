@@ -7,7 +7,7 @@
 - Scaffold status: complete in this repository
 - Vault dev status: linked into the live `totocaster` vault for real-time testing
 - Scope status: contract, scaffold, file lifecycle, current-file metrics lens, and current-file charting are implemented
-- Current implementation status: file-backed metrics timeline view, record parsing, validation, missing-id migration, current-file CRUD, metrics file create/rename/delete, per-file filter-bar/filter/sort persistence, grouping by day, metric, and source, and interactive charts are working
+- Current implementation status: file-backed metrics timeline view, record parsing, catalog-backed validation and labels, missing-id migration, current-file CRUD, metrics file create/rename/delete, per-file filter-bar/filter/sort persistence, grouping by day, metric, and source, and interactive charts are working
 - File browser status: `*.metrics.ndjson` files are routed into the plugin view and sidebar labels are normalized to logical metric dataset names
 - UI status: compact timeline layout, per-file persisted view controls, title-bar chart/filter/sort actions, grouping, row action menu, title-bar file actions, optional metric icons, and chart-to-timeline selection are implemented
 - Next implementation phase: cross-file navigation and file-level polish
@@ -79,6 +79,14 @@ Each line in a metrics file is one JSON object.
 - `context`: JSON object for structured extra data
 - `tags`: array of strings
 
+## Built-in metric catalog
+
+- `src/metric-catalog.json` is the machine-readable source of truth for first-party supported metrics, units, labels, icon candidates, and formatting hints.
+- `docs/metric-catalog.md` is generated from that JSON source and should not be edited by hand.
+- The catalog is used directly by runtime validation, row rendering, chart labels, and record-edit modal suggestions.
+- Unknown keys remain allowed by the file contract so the plugin stays file-first and user-extensible.
+- Unknown keys are warned as outside the built-in catalog rather than rejected as invalid rows.
+
 ### Identifier rules
 
 - `id` is required in v1
@@ -140,9 +148,12 @@ The plugin must surface, not silently swallow:
 - non-numeric `value`
 - duplicate `id`
 - duplicate `origin_id` when the plugin is configured to treat it as unique provenance
+- unknown built-in metric keys
+- unknown units
+- known-key and unit mismatches against the built-in catalog
 - mixed key and unit inconsistencies
 
-Unknown units are warnings, not fatal errors.
+Unknown keys, unknown units, and built-in key/unit mismatches are warnings, not fatal errors.
 
 ## Architecture contract
 
@@ -153,6 +164,7 @@ Unknown units are warnings, not fatal errors.
 - file browser integration for compound metrics extensions
 - current-file create, update, and delete flows for metrics rows
 - settings for metrics root, supported extensions, default write file, reference prefix, and metric icons
+- built-in metric catalog for first-party metric metadata and validation hints
 - direct file reads and writes via Obsidian APIs
 - in-memory working state only
 
@@ -192,6 +204,7 @@ The display name omits "Obsidian" to stay aligned with common community plugin n
 - The current file view can group records by day, metric, or source
 - Day groups render as linked `h2` headings titled `YYYY-MM-DD` and open the matching daily note
 - Metric icons can be shown in timeline markers and are enabled by default when the icon exists in Obsidian
+- Validation, row labels, chart labels, and record modal suggestions now read from the built-in metric catalog
 - Record actions are available from a minimal `...` menu for copying stable `metric:<id>` references, plus copy, edit, and delete operations
 - Metrics files can now be created, renamed, and deleted from commands or the metrics view title bar
 - The current file view can render interactive charts above the filter bar when it is shown, using the same visible rows as the timeline

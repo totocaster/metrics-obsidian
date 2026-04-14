@@ -1,4 +1,12 @@
 import type { MetricRecord } from "./contract";
+import {
+  canonicalMetricUnit,
+  getSupportedUnitsForMetric,
+  hasKnownMetricKey,
+  hasKnownMetricUnit,
+  isUnitAllowedForMetric,
+  normalizeMetricUnitKey,
+} from "./metric-catalog";
 
 export type MetricIssueSeverity = "error" | "warning";
 export type MetricRowStatus = "valid" | "warning" | "error";
@@ -40,24 +48,6 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const ISO_TS_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
 const ULID_RE = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 
-const KNOWN_UNITS = new Set([
-  "bpm",
-  "br/min",
-  "C",
-  "count",
-  "g",
-  "hours",
-  "kcal",
-  "kg",
-  "km",
-  "min",
-  "ml",
-  "mmHg",
-  "ms",
-  "percent",
-  "score",
-]);
-
 function addIssue(row: ParsedMetricRow, issue: MetricIssue): void {
   const exists = row.issues.some(
     (existing) =>
@@ -90,6 +80,10 @@ function isObjectRecord(value: unknown): value is Record<string, unknown> {
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function formatAllowedUnits(units: string[]): string {
+  return units.map((unit) => `\`${unit}\``).join(", ");
 }
 
 function validateObjectShape(row: ParsedMetricRow, parsed: Record<string, unknown>): void {
@@ -154,6 +148,15 @@ function validateObjectShape(row: ParsedMetricRow, parsed: Record<string, unknow
       ...row.metric,
       key,
     };
+
+    if (!hasKnownMetricKey(key)) {
+      addIssue(row, {
+        code: "unknown_key",
+        field: "key",
+        message: `Unknown metric key \`${key}\`.`,
+        severity: "warning",
+      });
+    }
   }
 
   const value = parsed.value;
@@ -218,13 +221,26 @@ function validateObjectShape(row: ParsedMetricRow, parsed: Record<string, unknow
         unit,
       };
 
-      if (!KNOWN_UNITS.has(unit)) {
+      if (!hasKnownMetricUnit(unit)) {
         addIssue(row, {
           code: "unknown_unit",
           field: "unit",
           message: `Unknown unit \`${unit}\`.`,
           severity: "warning",
         });
+      } else {
+        const keyValue = typeof row.metric?.key === "string" ? row.metric.key : null;
+        const unitAllowed = isUnitAllowedForMetric(keyValue, unit);
+        if (unitAllowed === false) {
+          addIssue(row, {
+            code: "unsupported_unit_for_key",
+            field: "unit",
+            message:
+              `Metric key \`${keyValue}\` does not support unit \`${canonicalMetricUnit(unit) ?? unit}\`.` +
+              ` Allowed units: ${formatAllowedUnits(getSupportedUnitsForMetric(keyValue))}.`,
+            severity: "warning",
+          });
+        }
       }
     }
   }
@@ -327,7 +343,7 @@ function collectUnitsByKey(rows: ParsedMetricRow[]): Map<string, Set<string>> {
 
   rows.forEach((row) => {
     const key = row.metric?.key;
-    const unit = row.metric?.unit;
+    const unit = normalizeMetricUnitKey(row.metric?.unit);
     if (typeof key !== "string" || typeof unit !== "string") {
       return;
     }

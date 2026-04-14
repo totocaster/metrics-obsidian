@@ -1,5 +1,11 @@
 import type { ParsedMetricRow } from "./metrics-file-model";
 import {
+  compareMetricKeys,
+  displayMetricKey,
+  displayMetricUnit,
+  normalizeMetricUnitKey,
+} from "./metric-catalog";
+import {
   rawValuePrecision,
   resolveMetricFractionDigits,
 } from "./metric-value-format";
@@ -59,7 +65,7 @@ export interface MetricsChartModel {
   pointCount: number;
 }
 
-const NO_UNIT_KEY = "__no_unit__";
+export const NO_UNIT_KEY = "__no_unit__";
 
 function rowTimestamp(row: ParsedMetricRow): number | null {
   const ts = row.metric?.ts;
@@ -305,7 +311,7 @@ function buildDailyPanel(
     segments.push({
       bucketKey,
       key,
-      label: key,
+      label: displayMetricKey(key),
       lineNumbers: [row.lineNumber],
       precision: rawRowValuePrecision(row),
       timestamp: rowTimestamp(row) ?? bucketTimestamp,
@@ -332,13 +338,13 @@ function buildDailyPanel(
       if (left.timestamp !== null && right.timestamp !== null && left.timestamp !== right.timestamp) {
         return left.timestamp - right.timestamp;
       }
-      return left.key.localeCompare(right.key);
+      return compareMetricKeys(left.key, right.key);
     });
   });
 
   const series = seriesOrder.map((key) => ({
     key,
-    label: key,
+    label: displayMetricKey(key),
     points: [],
   }));
 
@@ -446,7 +452,7 @@ function buildTemporalPanel(
 
       return {
         key,
-        label: key,
+        label: displayMetricKey(key),
         points: buckets
           .map((bucket) => pointMap.get(bucket.key))
           .filter((point): point is MetricsChartSeriesPoint => point !== undefined),
@@ -547,7 +553,7 @@ function buildSourcePanel(
 
       return {
         key,
-        label: key,
+        label: displayMetricKey(key),
         points: buckets
           .map((bucket) => pointMap.get(bucket.key))
           .filter((point): point is MetricsChartSeriesPoint => point !== undefined),
@@ -596,7 +602,7 @@ function buildKeyPanel(
   const bucketLineNumbers = new Map<string, number[]>();
   const bucketDefs = buckets.map((key) => ({
     key,
-    label: key,
+    label: key === "No metric" ? key : displayMetricKey(key),
     lineNumbers: bucketLineNumbers.get(key) ?? [],
     timestamp: null,
   }));
@@ -633,7 +639,7 @@ function buildKeyPanel(
   const series: MetricsChartSeries[] = [
     {
       key: "value",
-      label: unitLabel ?? "Value",
+      label: "Value",
       points: bucketDefs
         .map((bucket) => pointMap.get(bucket.key))
         .filter((point): point is MetricsChartSeriesPoint => point !== undefined),
@@ -679,18 +685,16 @@ export function buildMetricsChartModel(
 
   const unitOrder = uniqueStrings(
     plottableRows.map((row) => {
-      const unit = row.metric?.unit;
-      return typeof unit === "string" && unit.length > 0 ? unit : NO_UNIT_KEY;
+      return normalizeMetricUnitKey(row.metric?.unit) ?? NO_UNIT_KEY;
     }),
   );
 
   const panels = unitOrder
     .map((unitKey) => {
       const unitRows = plottableRows.filter((row) => {
-        const unit = row.metric?.unit;
-        return (typeof unit === "string" && unit.length > 0 ? unit : NO_UNIT_KEY) === unitKey;
+        return (normalizeMetricUnitKey(row.metric?.unit) ?? NO_UNIT_KEY) === unitKey;
       });
-      const unitLabel = unitKey === NO_UNIT_KEY ? null : unitKey;
+      const unitLabel = unitKey === NO_UNIT_KEY ? null : displayMetricUnit(unitKey) ?? unitKey;
 
       if (groupBy === "day") {
         return buildDailyPanel(unitRows, unitKey, unitLabel);

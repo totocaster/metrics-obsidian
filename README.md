@@ -12,6 +12,7 @@ Metrics is a file-first Obsidian plugin for working with `*.metrics.ndjson` data
 - Supports record create, edit, delete, and missing-id assignment
 - Supports metrics file create, rename, and delete
 - Renders records as a compact timeline with optional metric icons
+- Uses a catalog-backed registry for supported metric labels, units, icons, and formatting
 - Persists per-file filters, filter-bar visibility, sorting, grouping, and chart visibility
 - Adds interactive charts above the timeline using the same visible rows as the list
 - Copies stable plain-text metric references as `metric:<id>`
@@ -49,6 +50,22 @@ Default conventions:
 - metrics root: `Metrics/`
 - file extension: `*.metrics.ndjson`
 - default write target: `Metrics/All.metrics.ndjson`
+
+## Built-in catalog
+
+The plugin now carries a first-party metric catalog:
+
+- machine-readable source: `src/metric-catalog.json`
+- generated human reference: `docs/metric-catalog.md`
+
+That catalog drives:
+
+- supported metric labels in rows and charts
+- unit validation and per-metric allowed units
+- icon mapping
+- display formatting and authoring suggestions
+
+Unknown keys are still allowed by the file contract, but they are treated as outside the built-in catalog and surface as warnings instead of hard failures.
 
 ## Current feature set
 
@@ -112,6 +129,7 @@ Useful commands:
 - `npm run dev` starts the build watcher
 - `npm run build` creates a production bundle
 - `npm run check` runs TypeScript type-checking
+- `npm run generate:metric-catalog-doc` regenerates the human-readable catalog from the JSON source
 
 ### Live vault workflow
 
@@ -125,3 +143,4 @@ For implementation detail and current scope, see:
 
 - `docs/spec.md`
 - `docs/charts.md`
+- `docs/metric-catalog.md`
