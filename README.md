@@ -16,6 +16,7 @@ Metrics is a file-first Obsidian plugin for working with `*.metrics.ndjson` data
 - Lets lists and dropdowns show either friendly metric names or canonical keys
 - Persists per-file filters, filter-bar visibility, sorting, grouping, and chart visibility
 - Adds interactive charts above the timeline using the same visible rows as the list
+- Adds optional derived summary rows for average, median, minimum, maximum, sum, and count
 - Copies stable plain-text metric references as `metric:<id>`
 
 ## File format
@@ -87,6 +88,7 @@ Unknown keys are still allowed by the file contract, but they are treated as out
 - search
 - title-bar sort control
 - grouping by day, metric, and source
+- optional summary rows appended after the visible timeline or each visible group
 - per-file view state persistence until reset
 
 ### Charts

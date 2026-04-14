@@ -478,6 +478,11 @@
   color: var(--color-red);
 }
 
+.metrics-lens-record.is-summary .metrics-lens-record-marker {
+  border-radius: var(--radius-s);
+  color: var(--text-muted);
+}
+
 .metrics-lens-record-marker.has-icon svg {
   display: block;
   width: 0.7em;
@@ -493,6 +498,11 @@
 
 .metrics-lens-record-key {
   min-width: 0;
+}
+
+.metrics-lens-record-summary-context {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
 }
 
 .metrics-lens-record-value {
@@ -511,6 +521,10 @@
   font-family: var(--font-monospace);
   font-size: var(--font-ui-smaller);
   color: var(--text-muted);
+}
+
+.metrics-lens-record-actions-spacer {
+  min-height: 1px;
 }
 
 .metrics-lens-more-button {

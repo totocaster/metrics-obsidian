@@ -2,6 +2,7 @@ import type { MetricRowStatus } from "./metrics-file-model";
 
 export type MetricsSortOrder = "newest" | "oldest" | "value-desc" | "value-asc";
 export type MetricsGroupBy = "none" | "day" | "key" | "source";
+export type MetricsSummaryComputation = "none" | "avg" | "median" | "min" | "max" | "sum" | "count";
 export type MetricsStatusFilter = "all" | MetricRowStatus;
 export type MetricsTimeRange =
   | "all"
@@ -25,6 +26,7 @@ export interface MetricsViewState {
   sortOrder: MetricsSortOrder;
   source: string;
   status: MetricsStatusFilter;
+  summaryComputation: MetricsSummaryComputation;
   timeRange: MetricsTimeRange;
   toDate: string;
 }
@@ -44,6 +46,7 @@ export const DEFAULT_VIEW_STATE: MetricsViewState = {
   sortOrder: "newest",
   source: "",
   status: "all",
+  summaryComputation: "none",
   timeRange: "all",
   toDate: "",
 };
@@ -67,6 +70,17 @@ function normalizeGroupBy(value: unknown): MetricsGroupBy {
 
 function normalizeStatus(value: unknown): MetricsStatusFilter {
   return value === "valid" || value === "warning" || value === "error" ? value : "all";
+}
+
+function normalizeSummaryComputation(value: unknown): MetricsSummaryComputation {
+  return value === "avg" ||
+    value === "median" ||
+    value === "min" ||
+    value === "max" ||
+    value === "sum" ||
+    value === "count"
+    ? value
+    : "none";
 }
 
 function normalizeTimeRange(value: unknown): MetricsTimeRange {
@@ -100,6 +114,7 @@ export function normalizeMetricsViewState(
     sortOrder: normalizeSortOrder(value?.sortOrder),
     source: normalizeString(value?.source),
     status: normalizeStatus(value?.status),
+    summaryComputation: normalizeSummaryComputation(value?.summaryComputation),
     timeRange: normalizeTimeRange(value?.timeRange),
     toDate: normalizeString(value?.toDate),
   };

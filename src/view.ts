@@ -9,12 +9,15 @@ import {
   displayMetricKey,
   displayMetricName,
   displayMetricOption,
+  displayMetricUnit,
+  normalizeMetricUnitKey,
   type MetricNameDisplayMode,
 } from "./metric-catalog";
 import { metricIconForKey } from "./metric-icons";
 import {
   formatMetricDisplayValue,
   rawValuePrecision,
+  resolveMetricFractionDigits,
 } from "./metric-value-format";
 import {
   analyzeMetricsData,
@@ -26,6 +29,7 @@ import {
   type MetricsGroupBy,
   type MetricsSortOrder,
   type MetricsStatusFilter,
+  type MetricsSummaryComputation,
   type MetricsTimeRange,
   type MetricsViewState,
 } from "./view-state";
@@ -364,6 +368,46 @@ function applyMetricsViewState(
   });
 }
 
+function summaryComputationLabel(computation: MetricsSummaryComputation): string {
+  switch (computation) {
+    case "avg":
+      return "Average";
+    case "median":
+      return "Median";
+    case "min":
+      return "Minimum";
+    case "max":
+      return "Maximum";
+    case "sum":
+      return "Sum";
+    case "count":
+      return "Count";
+    case "none":
+    default:
+      return "Summary";
+  }
+}
+
+function summaryComputationSummaryLabel(computation: MetricsSummaryComputation): string | null {
+  switch (computation) {
+    case "avg":
+      return "average summaries";
+    case "median":
+      return "median summaries";
+    case "min":
+      return "minimum summaries";
+    case "max":
+      return "maximum summaries";
+    case "sum":
+      return "sum summaries";
+    case "count":
+      return "count summaries";
+    case "none":
+    default:
+      return null;
+  }
+}
+
 function hasActiveViewControls(viewState: MetricsViewState): boolean {
   return (
     filterBarControlCount(viewState) > 0 ||
@@ -399,6 +443,10 @@ function filterBarControlCount(viewState: MetricsViewState): number {
     count += 1;
   }
 
+  if (viewState.summaryComputation !== "none") {
+    count += 1;
+  }
+
   return count;
 }
 
@@ -429,6 +477,10 @@ function advancedControlCount(viewState: MetricsViewState): number {
     count += 1;
   }
 
+  if (viewState.summaryComputation !== "none") {
+    count += 1;
+  }
+
   return count;
 }
 
@@ -437,6 +489,151 @@ interface MetricsRowGroup {
   key: string;
   linkTarget?: string;
   rows: ParsedMetricRow[];
+}
+
+interface MetricsSummaryBucket {
+  metricKey: string;
+  rawPrecision: number;
+  totalRows: number;
+  unit: string | null;
+  values: number[];
+}
+
+interface MetricsSummaryRow {
+  computation: MetricsSummaryComputation;
+  label: string;
+  metricKey: string;
+  note?: string;
+  rawPrecision: number;
+  unit: string | null;
+  unitLabel?: string;
+  value: number;
+}
+
+type MetricsTimelineItem =
+  | {
+      kind: "record";
+      row: ParsedMetricRow;
+    }
+  | {
+      kind: "summary";
+      summary: MetricsSummaryRow;
+    };
+
+function summaryBucketKey(metricKey: string, unit: string | null): string {
+  return `${metricKey}::${unit ?? "__no_unit__"}`;
+}
+
+function summarizeValues(values: number[], computation: MetricsSummaryComputation): number | null {
+  if (values.length === 0) {
+    return null;
+  }
+
+  switch (computation) {
+    case "avg":
+      return values.reduce((total, value) => total + value, 0) / values.length;
+    case "median": {
+      const sorted = [...values].sort((left, right) => left - right);
+      const middle = Math.floor(sorted.length / 2);
+      return sorted.length % 2 === 0
+        ? (sorted[middle - 1] + sorted[middle]) / 2
+        : sorted[middle];
+    }
+    case "min":
+      return Math.min(...values);
+    case "max":
+      return Math.max(...values);
+    case "sum":
+      return values.reduce((total, value) => total + value, 0);
+    case "count":
+      return values.length;
+    case "none":
+    default:
+      return null;
+  }
+}
+
+function formatRowCount(count: number): string {
+  return `${count} ${count === 1 ? "row" : "rows"}`;
+}
+
+function buildMetricsSummaryRows(
+  rows: ParsedMetricRow[],
+  computation: MetricsSummaryComputation,
+  metricNameDisplayMode: MetricNameDisplayMode,
+): MetricsSummaryRow[] {
+  if (computation === "none") {
+    return [];
+  }
+
+  const buckets = new Map<string, MetricsSummaryBucket>();
+
+  rows.forEach((row) => {
+    const metricKey = typeof row.metric?.key === "string" && row.metric.key.length > 0 ? row.metric.key : null;
+    if (!metricKey) {
+      return;
+    }
+
+    const unit = normalizeMetricUnitKey(row.metric?.unit);
+    const bucketKey = summaryBucketKey(metricKey, unit);
+    const current = buckets.get(bucketKey) ?? {
+      metricKey,
+      rawPrecision: 0,
+      totalRows: 0,
+      unit,
+      values: [],
+    };
+    current.totalRows += 1;
+
+    const value = row.metric?.value;
+    if (typeof value === "number" && Number.isFinite(value)) {
+      current.values.push(value);
+      current.rawPrecision = Math.max(current.rawPrecision, rawValuePrecision(row.rawLine));
+    }
+
+    buckets.set(bucketKey, current);
+  });
+
+  const bucketCountByMetric = new Map<string, number>();
+  buckets.forEach((bucket) => {
+    if (bucket.values.length === 0) {
+      return;
+    }
+
+    bucketCountByMetric.set(bucket.metricKey, (bucketCountByMetric.get(bucket.metricKey) ?? 0) + 1);
+  });
+
+  return Array.from(buckets.values()).flatMap((bucket) => {
+    const value = summarizeValues(bucket.values, computation);
+    if (value === null) {
+      return [];
+    }
+
+    const note =
+      bucket.totalRows > bucket.values.length
+        ? `${formatRowCount(bucket.values.length)} used, ${formatRowCount(bucket.totalRows - bucket.values.length)} skipped`
+        : undefined;
+    const showUnitLabel =
+      computation === "count" || (bucketCountByMetric.get(bucket.metricKey) ?? 0) > 1;
+    const unitLabel = showUnitLabel
+      ? bucket.unit === null
+        ? "No unit"
+        : displayMetricUnit(bucket.unit) ?? bucket.unit
+      : undefined;
+
+    return [
+      {
+        computation,
+        label: displayMetricName(bucket.metricKey, metricNameDisplayMode),
+        metricKey: bucket.metricKey,
+        note,
+        rawPrecision: bucket.rawPrecision,
+        unit: computation === "count" ? null : bucket.unit,
+        unitLabel,
+        value,
+      },
+    ];
+  });
 }
 
 function groupRowsByDay(rows: ParsedMetricRow[]): MetricsRowGroup[] {
@@ -807,6 +1004,114 @@ function renderRecord(
     event.preventDefault();
     event.stopPropagation();
     openRecordMenu(event, row, plugin, file, referencePrefix);
+  });
+}
+
+function formatSummaryValue(summary: MetricsSummaryRow): string {
+  if (summary.computation === "count") {
+    return summary.value.toLocaleString(undefined, {
+      maximumFractionDigits: 0,
+    });
+  }
+
+  const digits = resolveMetricFractionDigits(summary.metricKey, summary.unit, {
+    rawPrecision: summary.rawPrecision,
+  });
+  const maximumFractionDigits =
+    (summary.computation === "avg" || summary.computation === "median") &&
+    !Number.isInteger(summary.value)
+      ? Math.max(digits.maximumFractionDigits, 1)
+      : digits.maximumFractionDigits;
+
+  return formatMetricDisplayValue(summary.value, summary.unit, {
+    includeUnit: true,
+    maximumFractionDigits,
+    metricKey: summary.metricKey,
+    minimumFractionDigits: Math.min(digits.minimumFractionDigits, maximumFractionDigits),
+    rawPrecision: summary.rawPrecision,
+  });
+}
+
+function renderSummaryRecord(
+  container: HTMLElement,
+  summary: MetricsSummaryRow,
+  options: {
+    isFirst: boolean;
+    isLast: boolean;
+  },
+): void {
+  const rowEl = container.createDiv({ cls: ["metrics-lens-record", "is-summary"] });
+  if (options.isFirst) {
+    rowEl.addClass("is-first");
+  }
+  if (options.isLast) {
+    rowEl.addClass("is-last");
+  }
+
+  const timeEl = rowEl.createDiv({ cls: "metrics-lens-record-time" });
+  timeEl.createSpan({
+    cls: "metrics-lens-record-time-primary",
+    text: summaryComputationLabel(summary.computation),
+  });
+
+  const body = rowEl.createDiv({ cls: "metrics-lens-record-body" });
+  const marker = body.createSpan({ cls: "metrics-lens-record-marker" });
+  marker.setAttribute("aria-hidden", "true");
+  try {
+    setIcon(marker, "calculator");
+    if (marker.querySelector("svg")) {
+      marker.addClass("has-icon");
+      body.addClass("has-icon-marker");
+    }
+  } catch {
+    marker.empty();
+  }
+
+  const main = body.createDiv({ cls: "metrics-lens-record-main" });
+  main.createSpan({
+    cls: "metrics-lens-record-key",
+    text: summary.label,
+  });
+  if (summary.unitLabel) {
+    main.createSpan({
+      cls: "metrics-lens-record-summary-context",
+      text: summary.unitLabel,
+    });
+  }
+  main.createSpan({
+    cls: "metrics-lens-record-value",
+    text: formatSummaryValue(summary),
+  });
+
+  if (summary.note) {
+    body.createDiv({
+      cls: "metrics-lens-record-note",
+      text: summary.note,
+    });
+  }
+
+  rowEl.createDiv({ cls: "metrics-lens-record-actions-spacer" });
+}
+
+function renderTimelineItems(
+  container: HTMLElement,
+  items: MetricsTimelineItem[],
+  plugin: MetricsPlugin,
+  file: TFile,
+  referencePrefix: string,
+): void {
+  items.forEach((item, index) => {
+    const options = {
+      isFirst: index === 0,
+      isLast: index === items.length - 1,
+    };
+
+    if (item.kind === "record") {
+      renderRecord(container, item.row, plugin, file, referencePrefix, options);
+      return;
+    }
+
+    renderSummaryRecord(container, item.summary, options);
   });
 }
 
@@ -1191,35 +1496,45 @@ export class MetricsFileView extends TextFileView {
           renderGroupHeading(headingContainer, group, this.plugin, currentFile.path);
 
           const recordsList = groupSection.createDiv({ cls: "metrics-lens-records" });
-          group.rows.forEach((row, index) => {
-            renderRecord(
-              recordsList,
-              row,
-              this.plugin,
-              currentFile,
-              this.plugin.settings.recordReferencePrefix,
-              {
-                isFirst: index === 0,
-                isLast: index === group.rows.length - 1,
-              },
-            );
-          });
-        });
-      } else {
-        const recordsList = recordsSection.createDiv({ cls: "metrics-lens-records" });
-        visibleRows.forEach((row, index) => {
-          renderRecord(
+          const timelineItems: MetricsTimelineItem[] = [
+            ...group.rows.map((row) => ({ kind: "record" as const, row })),
+            ...buildMetricsSummaryRows(
+              group.rows,
+              this.viewState.summaryComputation,
+              this.plugin.settings.metricNameDisplayMode,
+            ).map((summary) => ({
+              kind: "summary" as const,
+              summary,
+            })),
+          ];
+          renderTimelineItems(
             recordsList,
-            row,
+            timelineItems,
             this.plugin,
             currentFile,
             this.plugin.settings.recordReferencePrefix,
-            {
-              isFirst: index === 0,
-              isLast: index === visibleRows.length - 1,
-            },
           );
         });
+      } else {
+        const recordsList = recordsSection.createDiv({ cls: "metrics-lens-records" });
+        const timelineItems: MetricsTimelineItem[] = [
+          ...visibleRows.map((row) => ({ kind: "record" as const, row })),
+          ...buildMetricsSummaryRows(
+            visibleRows,
+            this.viewState.summaryComputation,
+            this.plugin.settings.metricNameDisplayMode,
+          ).map((summary) => ({
+            kind: "summary" as const,
+            summary,
+          })),
+        ];
+        renderTimelineItems(
+          recordsList,
+          timelineItems,
+          this.plugin,
+          currentFile,
+          this.plugin.settings.recordReferencePrefix,
+        );
       }
     }
 
@@ -1240,6 +1555,10 @@ export class MetricsFileView extends TextFileView {
     const groupingLabel = groupBySummaryLabel(this.viewState.groupBy);
     if (groupingLabel) {
       summaryParts.push(groupingLabel);
+    }
+    const summaryLabel = summaryComputationSummaryLabel(this.viewState.summaryComputation);
+    if (summaryLabel) {
+      summaryParts.push(summaryLabel);
     }
 
     const footer = container.createDiv({ cls: "metrics-lens-footer" });
@@ -1478,6 +1797,31 @@ export class MetricsFileView extends TextFileView {
       groupBySelect.addEventListener("change", () => {
         this.pendingControlFocus = { name: "groupBy" };
         this.viewState.groupBy = groupBySelect.value as MetricsGroupBy;
+        this.persistCurrentViewState();
+        this.render();
+      });
+
+      const summarySelect = advancedControls.createEl("select", { cls: "metrics-lens-control" });
+      summarySelect.dataset.metricsControl = "summaryComputation";
+      summarySelect.setAttribute("aria-label", "Show summary rows");
+      [
+        { label: "No summary", value: "none" },
+        { label: "Average", value: "avg" },
+        { label: "Median", value: "median" },
+        { label: "Minimum", value: "min" },
+        { label: "Maximum", value: "max" },
+        { label: "Sum", value: "sum" },
+        { label: "Count", value: "count" },
+      ].forEach((option) => {
+        summarySelect.createEl("option", {
+          text: option.label,
+          value: option.value,
+        });
+      });
+      summarySelect.value = this.viewState.summaryComputation;
+      summarySelect.addEventListener("change", () => {
+        this.pendingControlFocus = { name: "summaryComputation" };
+        this.viewState.summaryComputation = summarySelect.value as MetricsSummaryComputation;
         this.persistCurrentViewState();
         this.render();
       });

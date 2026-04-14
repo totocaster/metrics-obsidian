@@ -7,9 +7,9 @@
 - Scaffold status: complete in this repository
 - Vault dev status: linked into the live `totocaster` vault for real-time testing
 - Scope status: contract, scaffold, file lifecycle, current-file metrics lens, and current-file charting are implemented
-- Current implementation status: file-backed metrics timeline view, record parsing, catalog-backed validation and labels, missing-id migration, current-file CRUD, metrics file create/rename/delete, per-file filter-bar/filter/sort persistence, grouping by day, metric, and source, and interactive charts are working
+- Current implementation status: file-backed metrics timeline view, record parsing, catalog-backed validation and labels, missing-id migration, current-file CRUD, metrics file create/rename/delete, per-file filter-bar/filter/sort persistence, grouping by day, metric, and source, per-group derived summary rows, and interactive charts are working
 - File browser status: `*.metrics.ndjson` files are routed into the plugin view and sidebar labels are normalized to logical metric dataset names
-- UI status: compact timeline layout, per-file persisted view controls, title-bar chart/filter/sort actions, grouping, row action menu, title-bar file actions, optional metric icons, and chart-to-timeline selection are implemented
+- UI status: compact timeline layout, per-file persisted view controls, title-bar chart/filter/sort actions, grouping, derived summary rows, row action menu, title-bar file actions, optional metric icons, and chart-to-timeline selection are implemented
 - Next implementation phase: cross-file navigation and file-level polish
 
 ## Product
@@ -203,6 +203,7 @@ The display name omits "Obsidian" to stay aligned with common community plugin n
 - The current file view supports preset time ranges including today, this week, past 7 days, past 30 days, past 3 months, past 6 months, past 1 year, this month, and custom range
 - The current file view supports sort modes for newest-first, oldest-first, and value ordering
 - The current file view can group records by day, metric, or source
+- The current file view can append derived summary rows for average, median, minimum, maximum, sum, or count after the visible timeline or after each rendered group
 - Day groups render as linked `h2` headings titled `YYYY-MM-DD` and open the matching daily note
 - Metric icons can be shown in timeline markers and are enabled by default when the icon exists in Obsidian
 - Validation, row labels, chart labels, and record modal suggestions now read from the built-in metric catalog
@@ -243,6 +244,15 @@ The display name omits "Obsidian" to stay aligned with common community plugin n
    Make groups collapsible if the layout starts to feel heavy.
 4. Apply grouping after filtering and sorting.
    Filter -> sort -> group remains the cleanest pipeline for a file lens.
+
+### Derived summaries
+
+1. Implemented.
+   The current file view can append derived summary rows for average, median, minimum, maximum, sum, or count.
+2. Keep summaries local to the visible rows.
+   Summary rows are derived from the current post-filter timeline only and never mutate files.
+3. Summarize by metric and unit.
+   Mixed metrics and mixed units are split into separate derived rows instead of being merged.
 
 ## Recommended next work
 

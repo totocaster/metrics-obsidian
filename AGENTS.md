@@ -30,7 +30,7 @@ Implemented today:
 - missing-id assignment for legacy rows
 - current-file record CRUD
 - metrics file create, rename, and delete
-- filtering, sorting, and grouping
+- filtering, sorting, grouping, and derived summaries
 - current-file charts
 
 Explicitly out of scope for this phase:
@@ -93,6 +93,7 @@ Important contract decisions:
 - `src/view.ts`
   - current-file metrics lens
   - timeline rendering
+  - derived summary rows
   - filter/sort/group controls
   - title-bar action layout
   - row menus
