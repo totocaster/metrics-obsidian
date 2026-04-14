@@ -7,7 +7,7 @@
 - Scaffold status: complete in this repository
 - Vault dev status: linked into the live `totocaster` vault for real-time testing
 - Scope status: contract, scaffold, file lifecycle, current-file metrics lens, and current-file charting are implemented
-- Current implementation status: file-backed metrics timeline view, record parsing, validation, missing-id migration, current-file CRUD, metrics file create/rename/delete, metric reference resolution, per-file filtering/sorting persistence, grouping by day, metric, and source, and interactive charts are working
+- Current implementation status: file-backed metrics timeline view, record parsing, validation, missing-id migration, current-file CRUD, metrics file create/rename/delete, per-file filtering/sorting persistence, grouping by day, metric, and source, and interactive charts are working
 - File browser status: `*.metrics.ndjson` files are routed into the plugin view and sidebar labels are normalized to logical metric dataset names
 - UI status: compact timeline layout, per-file persisted view controls, grouping, row action menu, title-bar file actions, optional metric icons, and chart-to-timeline selection are implemented
 - Next implementation phase: cross-file navigation and file-level polish
@@ -89,7 +89,7 @@ Each line in a metrics file is one JSON object.
 
 ### Referenceability from Markdown
 
-The canonical plain-text metric reference format is:
+The stable metric reference primitive is:
 
 ```text
 metric:<id>
@@ -101,7 +101,7 @@ Example:
 metric:01JRX9Y7T9TQ8Q3A91F1M7A4AA
 ```
 
-Notes may contain this token anywhere in Markdown. A future plugin phase may recognize or enhance it, but the token itself is the stable cross-file reference primitive.
+Notes may contain this token anywhere in Markdown as a plain reference string. In this phase, the plugin does not try to resolve or render metric references inside notes.
 
 ## CRUD semantics
 
@@ -192,9 +192,7 @@ The display name omits "Obsidian" to stay aligned with common community plugin n
 - The current file view can group records by day, metric, or source
 - Day groups render as linked `h2` headings titled `YYYY-MM-DD` and open the matching daily note
 - Metric icons can be shown in timeline markers and are enabled by default when the icon exists in Obsidian
-- Record actions are available from a minimal `...` menu for copy, edit, and delete operations
-- The plugin can now resolve `metric:<id>` or raw ULIDs from command input or editor text and open the owning file
-- Metric reference resolution focuses and highlights the matching record in the metrics view
+- Record actions are available from a minimal `...` menu for copying stable `metric:<id>` references, plus copy, edit, and delete operations
 - Metrics files can now be created, renamed, and deleted from commands or the metrics view title bar
 - The current file view can render interactive charts above the filters using the same visible rows as the timeline
 - Chart buckets can now focus the matching visible timeline rows below
