@@ -3400,7 +3400,6 @@ function buildMetricsSummaryRows(rows, computation, metricNameDisplayMode) {
     return [
       {
         computation,
-        count: bucket.values.length,
         label: displayMetricName(bucket.metricKey, metricNameDisplayMode),
         metricKey: bucket.metricKey,
         note,
@@ -3724,10 +3723,6 @@ function renderSummaryRecord(container, summary, options) {
   timeEl.createSpan({
     cls: "metrics-lens-record-time-primary",
     text: summaryComputationLabel(summary.computation)
-  });
-  timeEl.createSpan({
-    cls: "metrics-lens-record-time-secondary",
-    text: `n=${summary.count}`
   });
   const body = rowEl.createDiv({ cls: "metrics-lens-record-body" });
   const marker = body.createSpan({ cls: "metrics-lens-record-marker" });
