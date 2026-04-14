@@ -1,31 +1,57 @@
-# Metrics
+![Metrics for Obsidian](.github/assets/metrics-hero.png)
 
-File-first metrics for Obsidian.
+**File-first metrics for Obsidian that keep `*.metrics.ndjson` as the source of truth.**
 
-Metrics is an Obsidian plugin for viewing and editing canonical `*.metrics.ndjson` files inside your vault. The files stay as the source of truth: no hidden database, no required cache, and no saved-dashboard layer sitting behind the UI.
+Metrics is an Obsidian plugin for viewing and editing canonical `*.metrics.ndjson` files inside your vault. It gives you a compact timeline, inline validation, cross-file search, filtering, grouping, summaries, and charts without introducing a hidden database or cache layer.
 
-## Status
+## Why
 
-Metrics is in active `0.1.x` development and currently targets Obsidian `1.6.0+`.
+The goal is to make metrics feel like normal vault data instead of app-owned state:
 
-## What it does
+- metrics stay as plaintext files in your vault
+- each line is one JSON object, so the data stays diffable and scriptable
+- the plugin acts as a lens over the file instead of taking ownership of it
+- validation issues are surfaced directly in the view instead of being silently swallowed
 
-- Opens supported metrics files in a dedicated metrics view
-- Keeps metrics files visible in the file browser with clean logical labels
-- Parses NDJSON line by line and surfaces validation issues inline
-- Creates, edits, and deletes records in the current file
-- Assigns ULID ids to legacy rows that are missing `id`
-- Creates, renames, and deletes metrics files under the configured root
-- Searches records across metrics files from the command palette and jumps to the matching row
-- Filters by time range, metric, source, validation status, and free text
-- Sorts by newest, oldest, value high-low, and value low-high
-- Groups records by day, metric, or source
-- Adds optional derived summary rows for average, median, minimum, maximum, sum, and count
-- Adds optional charts driven by the same visible rows as the timeline
-- Copies stable plain-text references such as `metric:<id>`
-- Persists per-file view state for filters, sorting, grouping, and chart visibility
+## Features
 
-## File format
+- Dedicated metrics view for supported files
+- Current-file record create, edit, and delete
+- Missing-id assignment for legacy rows
+- Metrics file create, rename, and delete
+- Cross-file command-palette search that jumps to the matching row
+- Filtering by time range, metric, source, validation status, and free text
+- Sorting by newest, oldest, value high-low, and value low-high
+- Grouping by day, metric, or source
+- Optional derived summary rows for average, median, minimum, maximum, sum, and count
+- Optional charts driven by the same visible rows as the timeline
+- Per-file view state persistence
+- Stable plain-text references such as `metric:<id>`
+- Catalog-backed metric labels, units, icons, and formatting
+
+## Install
+
+Metrics currently targets Obsidian `1.6.0+`.
+
+For a local install:
+
+```bash
+npm install
+npm run build
+```
+
+Then copy these files into your vault plugin folder:
+
+```text
+.obsidian/plugins/metrics-lens/
+├── manifest.json
+├── main.js
+└── styles.css
+```
+
+After that, enable `Metrics` in Obsidian's community plugins screen.
+
+## Metric files
 
 Each line in a metrics file is one JSON object.
 
@@ -55,12 +81,12 @@ Example:
 
 Default conventions:
 
-- Metrics root: `Metrics/`
-- Supported extension: `*.metrics.ndjson`
-- Default write target: `Metrics/All.metrics.ndjson`
-- Default record reference prefix: `metric:`
+- metrics root: `Metrics/`
+- supported extension: `*.metrics.ndjson`
+- default write target: `Metrics/All.metrics.ndjson`
+- default record reference prefix: `metric:`
 
-Validation rules are strict about structure and required fields, but the plugin stays file-first:
+Validation behavior:
 
 - unknown metric keys are allowed and shown as warnings
 - unknown units are allowed and shown as warnings
@@ -69,22 +95,24 @@ Validation rules are strict about structure and required fields, but the plugin 
 
 ## Commands
 
-The current command surface includes:
+Current command set:
 
-- `Open current metrics file`
-- `Open metrics view`
-- `Search metrics`
-- `Add record to current metrics file`
-- `New metrics file`
-- `Rename current metrics file`
-- `Delete current metrics file`
-- `Assign missing ids in current metrics file`
+```text
+Open current metrics file
+Open metrics view
+Search metrics
+Add record to current metrics file
+New metrics file
+Rename current metrics file
+Delete current metrics file
+Assign missing ids in current metrics file
+```
 
 Record-level copy, edit, and delete actions are available from the timeline row menu.
 
 ## Settings
 
-Metrics currently exposes settings for:
+The plugin includes a small settings pane for vault-level conventions:
 
 - metrics root folder
 - supported extensions
@@ -95,37 +123,44 @@ Metrics currently exposes settings for:
 
 ## Built-in catalog
 
-The plugin ships with a first-party metric catalog in [`src/metric-catalog.json`](src/metric-catalog.json).
+The first-party catalog lives in [`src/metric-catalog.json`](src/metric-catalog.json).
 
-That catalog drives:
+It drives:
 
 - metric labels in rows, filters, and charts
 - allowed units and unit formatting
 - icon mapping
 - record modal suggestions
 
-## Non-goals
-
-Metrics is intentionally not:
-
-- an ingestion or import pipeline
-- a hidden database or cache-backed system
-- a saved-dashboard or saved-query product
-- a note or document feature set
-- an in-note metric reference resolver in the current phase
+Unknown keys remain allowed by the file contract so the plugin stays file-first and user-extensible.
 
 ## Development
 
-Install dependencies:
+Install dependencies and start watch mode:
 
 ```bash
 npm install
+npm run dev
 ```
 
-Useful commands:
+Build once:
 
-- `npm run dev` starts the build watcher
-- `npm run build` creates a production bundle
-- `npm run check` runs TypeScript type-checking
+```bash
+npm run build
+```
 
-For local testing, link or copy `manifest.json`, `main.js`, and `styles.css` into `.obsidian/plugins/metrics-lens/` inside a vault.
+Run type-checking:
+
+```bash
+npm run check
+```
+
+For local vault development, place the built plugin in:
+
+```text
+.obsidian/plugins/metrics-lens
+```
+
+## License
+
+[MIT](./LICENSE)
