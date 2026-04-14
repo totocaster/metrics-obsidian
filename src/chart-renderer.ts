@@ -251,8 +251,14 @@ function computeVisibleRange(
     }
   } else {
     const padding = range * 0.06;
-    minValue -= padding;
-    maxValue += padding;
+    if (minValue === 0) {
+      maxValue += padding;
+    } else if (maxValue === 0) {
+      minValue -= padding;
+    } else {
+      minValue -= padding;
+      maxValue += padding;
+    }
   }
 
   return { maxValue, minValue };
