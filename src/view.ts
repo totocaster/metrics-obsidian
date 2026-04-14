@@ -5,7 +5,10 @@ import { renderMetricsChart, type MetricsChartSelection } from "./chart-renderer
 import { toMetricReference, type MetricRecord } from "./contract";
 import type MetricsPlugin from "./main";
 import { metricIconForKey } from "./metric-icons";
-import { formatMetricDisplayValue } from "./metric-value-format";
+import {
+  formatMetricDisplayValue,
+  rawValuePrecision,
+} from "./metric-value-format";
 import {
   analyzeMetricsData,
   type ParsedMetricRow,
@@ -55,6 +58,8 @@ function formatMetricValue(row: ParsedMetricRow): string | null {
 
   return formatMetricDisplayValue(value, unit, {
     includeUnit: true,
+    metricKey: row.metric?.key,
+    rawPrecision: rawValuePrecision(row.rawLine),
   });
 }
 

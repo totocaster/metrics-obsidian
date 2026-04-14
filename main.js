@@ -637,9 +637,119 @@ var MetricsSettingTab = class extends import_obsidian3.PluginSettingTab {
 // src/view.ts
 var import_obsidian5 = require("obsidian");
 
+// src/metric-value-format.ts
+function normalizeDurationUnit(unit) {
+  if (!unit) {
+    return null;
+  }
+  const normalizedUnit = unit.trim().toLowerCase();
+  if (normalizedUnit === "min") {
+    return "min";
+  }
+  if (normalizedUnit === "sec") {
+    return "sec";
+  }
+  return null;
+}
+var MAX_AUTO_FRACTION_DIGITS = 2;
+var MAX_RAW_FRACTION_DIGITS = 6;
+function clampFractionDigits(value) {
+  return Math.max(0, Math.min(MAX_RAW_FRACTION_DIGITS, value));
+}
+function fixedFractionDigits(digits) {
+  const normalized = clampFractionDigits(digits);
+  return {
+    maximumFractionDigits: normalized,
+    minimumFractionDigits: normalized
+  };
+}
+function normalizeMetricKey(metricKey) {
+  return typeof metricKey === "string" ? metricKey.trim().toLowerCase() : "";
+}
+function normalizeUnit(unit) {
+  return typeof unit === "string" ? unit.trim().toLowerCase() : "";
+}
+function defaultFractionDigits(rawPrecision) {
+  if (typeof rawPrecision === "number") {
+    return fixedFractionDigits(
+      rawPrecision > 0 ? Math.min(rawPrecision, MAX_AUTO_FRACTION_DIGITS) : 0
+    );
+  }
+  return {
+    maximumFractionDigits: clampFractionDigits(MAX_AUTO_FRACTION_DIGITS),
+    minimumFractionDigits: 0
+  };
+}
+function rawValuePrecision(rawLine) {
+  const match = /"value"\s*:\s*-?\d+(?:\.(\d+))?(?:[eE][+-]?\d+)?/.exec(rawLine);
+  return clampFractionDigits(match?.[1]?.length ?? 0);
+}
+function resolveMetricFractionDigits(metricKey, unit, options) {
+  const normalizedMetricKey = normalizeMetricKey(metricKey);
+  const normalizedUnit = normalizeUnit(unit);
+  if (normalizedMetricKey === "body.weight") {
+    return fixedFractionDigits(1);
+  }
+  if (normalizedMetricKey.endsWith("_pct") || normalizedUnit === "%" || normalizedUnit === "percent") {
+    return fixedFractionDigits(1);
+  }
+  if (normalizedMetricKey.includes("temperature") || normalizedUnit === "c" || normalizedUnit === "f") {
+    return fixedFractionDigits(1);
+  }
+  if (normalizedUnit === "bpm" || normalizedUnit === "br/min" || normalizedUnit === "count" || normalizedUnit === "kcal" || normalizedUnit === "mmhg" || normalizedUnit === "score") {
+    return fixedFractionDigits(0);
+  }
+  return defaultFractionDigits(options?.rawPrecision);
+}
+function formatDurationValue(value, durationUnit) {
+  const sign = value < 0 ? "-" : "";
+  const totalSeconds = Math.round(Math.abs(durationUnit === "min" ? value * 60 : value));
+  if (totalSeconds === 0) {
+    return "0s";
+  }
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor(totalSeconds % 3600 / 60);
+  const seconds = totalSeconds % 60;
+  const parts = [];
+  if (hours > 0) {
+    parts.push(`${hours}h`);
+  }
+  if (minutes > 0) {
+    parts.push(`${minutes}m`);
+  }
+  if (seconds > 0 || parts.length === 0) {
+    parts.push(`${seconds}s`);
+  }
+  return `${sign}${parts.join(" ")}`;
+}
+function formatMetricDisplayValue(value, unit, options) {
+  const durationUnit = normalizeDurationUnit(unit);
+  if (durationUnit) {
+    return formatDurationValue(value, durationUnit);
+  }
+  const digits = typeof options?.decimals === "number" ? fixedFractionDigits(options.decimals) : typeof options?.minimumFractionDigits === "number" || typeof options?.maximumFractionDigits === "number" ? {
+    maximumFractionDigits: clampFractionDigits(
+      Math.max(
+        options.maximumFractionDigits ?? options.minimumFractionDigits ?? 0,
+        options.minimumFractionDigits ?? 0
+      )
+    ),
+    minimumFractionDigits: clampFractionDigits(options.minimumFractionDigits ?? 0)
+  } : resolveMetricFractionDigits(options?.metricKey, unit, {
+    rawPrecision: options?.rawPrecision
+  });
+  const formattedValue = value.toLocaleString(void 0, {
+    maximumFractionDigits: digits.maximumFractionDigits,
+    minimumFractionDigits: digits.minimumFractionDigits
+  });
+  if (options?.includeUnit && typeof unit === "string" && unit.length > 0) {
+    return `${formattedValue} ${unit}`;
+  }
+  return formattedValue;
+}
+
 // src/chart-model.ts
 var NO_UNIT_KEY = "__no_unit__";
-var MAX_CHART_PRECISION = 6;
 function rowTimestamp(row) {
   const ts = row.metric?.ts;
   if (typeof ts !== "string") {
@@ -675,15 +785,25 @@ function uniqueStrings(values) {
 function appendUniqueLineNumber(lineNumbers, lineNumber) {
   return lineNumbers.includes(lineNumber) ? lineNumbers : [...lineNumbers, lineNumber];
 }
-function clampPrecision(value) {
-  return Math.max(0, Math.min(MAX_CHART_PRECISION, value));
+function rawRowValuePrecision(row) {
+  return rawValuePrecision(row.rawLine);
 }
-function rawValuePrecision(row) {
-  const match = /"value"\s*:\s*-?\d+(?:\.(\d+))?(?:[eE][+-]?\d+)?/.exec(row.rawLine);
-  return clampPrecision(match?.[1]?.length ?? 0);
-}
-function maxPrecisionForRows(rows) {
-  return rows.reduce((maxPrecision, row) => Math.max(maxPrecision, rawValuePrecision(row)), 0);
+function preferredPrecisionForRows(rows) {
+  return rows.reduce(
+    (current, row) => {
+      const digits = resolveMetricFractionDigits(row.metric?.key, row.metric?.unit, {
+        rawPrecision: rawRowValuePrecision(row)
+      });
+      return {
+        maximumFractionDigits: Math.max(current.maximumFractionDigits, digits.maximumFractionDigits),
+        minimumFractionDigits: Math.max(current.minimumFractionDigits, digits.minimumFractionDigits)
+      };
+    },
+    {
+      maximumFractionDigits: 0,
+      minimumFractionDigits: 0
+    }
+  );
 }
 function formatFixed(value, decimals) {
   return value.toLocaleString(void 0, {
@@ -691,10 +811,12 @@ function formatFixed(value, decimals) {
     minimumFractionDigits: decimals
   });
 }
-function resolveAxisPrecision(minValue, maxValue, minimumPrecision) {
+function resolveAxisPrecision(minValue, maxValue, minimumPrecision, maximumPrecision) {
   const range = maxValue - minValue || 1;
   const guideValues = [maxValue, minValue + range * 0.75, minValue + range * 0.5, minValue + range * 0.25, minValue];
-  for (let decimals = clampPrecision(minimumPrecision); decimals <= MAX_CHART_PRECISION; decimals += 1) {
+  const lowerBound = Math.max(0, minimumPrecision);
+  const upperBound = Math.max(lowerBound, maximumPrecision);
+  for (let decimals = lowerBound; decimals <= upperBound; decimals += 1) {
     const labels = guideValues.map((value) => formatFixed(value, decimals));
     let unique = true;
     for (let index = 1; index < labels.length; index += 1) {
@@ -707,7 +829,7 @@ function resolveAxisPrecision(minValue, maxValue, minimumPrecision) {
       return decimals;
     }
   }
-  return MAX_CHART_PRECISION;
+  return upperBound;
 }
 function hasPlottableValue(row) {
   return typeof row.metric?.key === "string" && row.metric.key.length > 0 && typeof row.metric?.value === "number" && Number.isFinite(row.metric.value);
@@ -776,7 +898,7 @@ function collectStackedValueRange(stackSegments) {
   };
 }
 function buildDailyPanel(rows, unitKey, unitLabel) {
-  const valuePrecision = maxPrecisionForRows(rows);
+  const valuePrecision = preferredPrecisionForRows(rows);
   const seriesOrder = uniqueStrings(
     rows.map((row) => row.metric?.key).filter((value) => typeof value === "string" && value.length > 0)
   );
@@ -808,7 +930,7 @@ function buildDailyPanel(rows, unitKey, unitLabel) {
       key,
       label: key,
       lineNumbers: [row.lineNumber],
-      precision: rawValuePrecision(row),
+      precision: rawRowValuePrecision(row),
       timestamp: rowTimestamp(row) ?? bucketTimestamp,
       value
     });
@@ -842,7 +964,12 @@ function buildDailyPanel(rows, unitKey, unitLabel) {
   }
   return {
     axisKind: "time",
-    axisPrecision: resolveAxisPrecision(valueRange.minValue, valueRange.maxValue, valuePrecision),
+    axisPrecision: resolveAxisPrecision(
+      valueRange.minValue,
+      valueRange.maxValue,
+      valuePrecision.minimumFractionDigits,
+      valuePrecision.maximumFractionDigits
+    ),
     buckets,
     kind: "bar",
     maxValue: valueRange.maxValue,
@@ -855,7 +982,7 @@ function buildDailyPanel(rows, unitKey, unitLabel) {
   };
 }
 function buildTemporalPanel(rows, unitKey, unitLabel, bucketByDay) {
-  const valuePrecision = maxPrecisionForRows(rows);
+  const valuePrecision = preferredPrecisionForRows(rows);
   const seriesOrder = uniqueStrings(
     rows.map((row) => row.metric?.key).filter((value) => typeof value === "string" && value.length > 0)
   );
@@ -888,7 +1015,7 @@ function buildTemporalPanel(rows, unitKey, unitLabel, bucketByDay) {
       pointMap.set(bucketKey, {
         bucketKey,
         lineNumbers: appendUniqueLineNumber(existing?.lineNumbers ?? [], row.lineNumber),
-        precision: rawValuePrecision(row),
+        precision: rawRowValuePrecision(row),
         timestamp: bucketTimestamp,
         value
       });
@@ -923,7 +1050,12 @@ function buildTemporalPanel(rows, unitKey, unitLabel, bucketByDay) {
   }
   return {
     axisKind: "time",
-    axisPrecision: resolveAxisPrecision(valueRange.minValue, valueRange.maxValue, valuePrecision),
+    axisPrecision: resolveAxisPrecision(
+      valueRange.minValue,
+      valueRange.maxValue,
+      valuePrecision.minimumFractionDigits,
+      valuePrecision.maximumFractionDigits
+    ),
     buckets,
     kind: buckets.length >= 2 ? "line" : "bar",
     maxValue: valueRange.maxValue,
@@ -936,7 +1068,7 @@ function buildTemporalPanel(rows, unitKey, unitLabel, bucketByDay) {
   };
 }
 function buildSourcePanel(rows, unitKey, unitLabel) {
-  const valuePrecision = maxPrecisionForRows(rows);
+  const valuePrecision = preferredPrecisionForRows(rows);
   const bucketLineNumbers = /* @__PURE__ */ new Map();
   const bucketKeys = uniqueStrings(
     rows.map((row) => {
@@ -965,7 +1097,7 @@ function buildSourcePanel(rows, unitKey, unitLabel) {
       pointMap.set(source, {
         bucketKey: source,
         lineNumbers: [row.lineNumber],
-        precision: rawValuePrecision(row),
+        precision: rawRowValuePrecision(row),
         timestamp: rowTimestamp(row),
         value
       });
@@ -997,7 +1129,12 @@ function buildSourcePanel(rows, unitKey, unitLabel) {
   }
   return {
     axisKind: "category",
-    axisPrecision: resolveAxisPrecision(valueRange.minValue, valueRange.maxValue, valuePrecision),
+    axisPrecision: resolveAxisPrecision(
+      valueRange.minValue,
+      valueRange.maxValue,
+      valuePrecision.minimumFractionDigits,
+      valuePrecision.maximumFractionDigits
+    ),
     buckets,
     kind: "bar",
     maxValue: valueRange.maxValue,
@@ -1010,7 +1147,7 @@ function buildSourcePanel(rows, unitKey, unitLabel) {
   };
 }
 function buildKeyPanel(rows, unitKey, unitLabel) {
-  const valuePrecision = maxPrecisionForRows(rows);
+  const valuePrecision = preferredPrecisionForRows(rows);
   const buckets = uniqueStrings(
     rows.map((row) => {
       const key = row.metric?.key;
@@ -1039,7 +1176,7 @@ function buildKeyPanel(rows, unitKey, unitLabel) {
       pointMap.set(key, {
         bucketKey: key,
         lineNumbers: [row.lineNumber],
-        precision: rawValuePrecision(row),
+        precision: rawRowValuePrecision(row),
         timestamp: rowTimestamp(row),
         value
       });
@@ -1063,7 +1200,12 @@ function buildKeyPanel(rows, unitKey, unitLabel) {
   }
   return {
     axisKind: "category",
-    axisPrecision: resolveAxisPrecision(valueRange.minValue, valueRange.maxValue, valuePrecision),
+    axisPrecision: resolveAxisPrecision(
+      valueRange.minValue,
+      valueRange.maxValue,
+      valuePrecision.minimumFractionDigits,
+      valuePrecision.maximumFractionDigits
+    ),
     buckets: bucketDefs.map((bucket) => ({
       ...bucket,
       lineNumbers: bucketLineNumbers.get(bucket.key) ?? []
@@ -1125,57 +1267,6 @@ function buildMetricsChartModel(rows, groupBy) {
   };
 }
 
-// src/metric-value-format.ts
-function normalizeDurationUnit(unit) {
-  if (!unit) {
-    return null;
-  }
-  const normalizedUnit = unit.trim().toLowerCase();
-  if (normalizedUnit === "min") {
-    return "min";
-  }
-  if (normalizedUnit === "sec") {
-    return "sec";
-  }
-  return null;
-}
-function formatDurationValue(value, durationUnit) {
-  const sign = value < 0 ? "-" : "";
-  const totalSeconds = Math.round(Math.abs(durationUnit === "min" ? value * 60 : value));
-  if (totalSeconds === 0) {
-    return "0s";
-  }
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor(totalSeconds % 3600 / 60);
-  const seconds = totalSeconds % 60;
-  const parts = [];
-  if (hours > 0) {
-    parts.push(`${hours}h`);
-  }
-  if (minutes > 0) {
-    parts.push(`${minutes}m`);
-  }
-  if (seconds > 0 || parts.length === 0) {
-    parts.push(`${seconds}s`);
-  }
-  return `${sign}${parts.join(" ")}`;
-}
-function formatMetricDisplayValue(value, unit, options) {
-  const durationUnit = normalizeDurationUnit(unit);
-  if (durationUnit) {
-    return formatDurationValue(value, durationUnit);
-  }
-  const decimals = options?.decimals ?? 0;
-  const formattedValue = value.toLocaleString(void 0, {
-    maximumFractionDigits: decimals,
-    minimumFractionDigits: decimals
-  });
-  if (options?.includeUnit && typeof unit === "string" && unit.length > 0) {
-    return `${formattedValue} ${unit}`;
-  }
-  return formattedValue;
-}
-
 // src/chart-renderer.ts
 var SVG_NS = "http://www.w3.org/2000/svg";
 var CHART_WIDTH = 640;
@@ -1193,10 +1284,17 @@ function createSvgEl(tagName, attributes) {
   }
   return element;
 }
-function formatChartValue(value, decimals, unit) {
+function formatChartAxisValue(value, decimals, unit) {
   return formatMetricDisplayValue(value, unit, {
     decimals,
     includeUnit: false
+  });
+}
+function formatChartTooltipValue(value, metricKey, rawPrecision, unit) {
+  return formatMetricDisplayValue(value, unit, {
+    includeUnit: false,
+    metricKey,
+    rawPrecision
   });
 }
 function formatBucketLabel(bucket, axisKind) {
@@ -1402,7 +1500,7 @@ function appendYAxis(svg, panel) {
       x: PLOT_LEFT - 8,
       y: y + 4
     });
-    label.textContent = formatChartValue(value, panel.axisPrecision, panel.unitLabel);
+    label.textContent = formatChartAxisValue(value, panel.axisPrecision, panel.unitLabel);
     svg.appendChild(label);
   });
   const zeroY = yForValue(baselineValue);
@@ -1465,6 +1563,7 @@ function lineHoverTargets(panel, xForTimestamp, visibleKeys, colorClasses) {
         colorClass: colorClasses.get(series.key) ?? colorClass(0),
         label: series.label,
         lineNumbers: point.lineNumbers,
+        metricKey: series.key,
         precision: point.precision,
         value: point.value
       };
@@ -1507,6 +1606,7 @@ function barHoverTargets(panel, bucketWidth, visibleKeys, colorClasses) {
             colorClass: colorClasses.get(segment.key) ?? colorClass(0),
             label: timeLabel ? `${segment.label} ${timeLabel}` : segment.label,
             lineNumbers: segment.lineNumbers,
+            metricKey: segment.key,
             precision: segment.precision,
             value: segment.value
           };
@@ -1526,6 +1626,7 @@ function barHoverTargets(panel, bucketWidth, visibleKeys, colorClasses) {
         colorClass: colorClasses.get(series.key) ?? colorClass(0),
         label: series.label,
         lineNumbers: point.lineNumbers,
+        metricKey: series.key,
         precision: point.precision,
         value: point.value
       };
@@ -1565,7 +1666,7 @@ function renderTooltip(tooltipEl, panel, target) {
     });
     row.createSpan({
       cls: "metrics-lens-chart-tooltip-value",
-      text: formatChartValue(entry.value, entry.precision, panel.unitLabel)
+      text: formatChartTooltipValue(entry.value, entry.metricKey, entry.precision, panel.unitLabel)
     });
   });
 }
@@ -2397,7 +2498,9 @@ function formatMetricValue(row) {
     return null;
   }
   return formatMetricDisplayValue(value, unit, {
-    includeUnit: true
+    includeUnit: true,
+    metricKey: row.metric?.key,
+    rawPrecision: rawValuePrecision(row.rawLine)
   });
 }
 function rowTimestamp2(row) {

@@ -25,6 +25,7 @@ interface HoverEntry {
   colorClass: string;
   label: string;
   lineNumbers: number[];
+  metricKey: string;
   precision: number;
   value: number;
 }
@@ -72,7 +73,7 @@ function createSvgEl<K extends keyof SVGElementTagNameMap>(
   return element;
 }
 
-function formatChartValue(
+function formatChartAxisValue(
   value: number,
   decimals: number,
   unit: string | null | undefined,
@@ -80,6 +81,19 @@ function formatChartValue(
   return formatMetricDisplayValue(value, unit, {
     decimals,
     includeUnit: false,
+  });
+}
+
+function formatChartTooltipValue(
+  value: number,
+  metricKey: string,
+  rawPrecision: number,
+  unit: string | null | undefined,
+): string {
+  return formatMetricDisplayValue(value, unit, {
+    includeUnit: false,
+    metricKey,
+    rawPrecision,
   });
 }
 
@@ -353,7 +367,7 @@ function appendYAxis(
       x: PLOT_LEFT - 8,
       y: y + 4,
     });
-    label.textContent = formatChartValue(value, panel.axisPrecision, panel.unitLabel);
+    label.textContent = formatChartAxisValue(value, panel.axisPrecision, panel.unitLabel);
     svg.appendChild(label);
   });
 
@@ -442,6 +456,7 @@ function lineHoverTargets(
             colorClass: colorClasses.get(series.key) ?? colorClass(0),
             label: series.label,
             lineNumbers: point.lineNumbers,
+            metricKey: series.key,
             precision: point.precision,
             value: point.value,
           };
@@ -498,6 +513,7 @@ function barHoverTargets(
               colorClass: colorClasses.get(segment.key) ?? colorClass(0),
               label: timeLabel ? `${segment.label} ${timeLabel}` : segment.label,
               lineNumbers: segment.lineNumbers,
+              metricKey: segment.key,
               precision: segment.precision,
               value: segment.value,
             };
@@ -521,6 +537,7 @@ function barHoverTargets(
             colorClass: colorClasses.get(series.key) ?? colorClass(0),
             label: series.label,
             lineNumbers: point.lineNumbers,
+            metricKey: series.key,
             precision: point.precision,
             value: point.value,
           };
@@ -571,7 +588,7 @@ function renderTooltip(
     });
     row.createSpan({
       cls: "metrics-lens-chart-tooltip-value",
-      text: formatChartValue(entry.value, entry.precision, panel.unitLabel),
+      text: formatChartTooltipValue(entry.value, entry.metricKey, entry.precision, panel.unitLabel),
     });
   });
 }

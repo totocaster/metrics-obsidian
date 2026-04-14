@@ -1,4 +1,8 @@
 import type { ParsedMetricRow } from "./metrics-file-model";
+import {
+  rawValuePrecision,
+  resolveMetricFractionDigits,
+} from "./metric-value-format";
 import type { MetricsGroupBy } from "./view-state";
 
 export type MetricsChartKind = "bar" | "line";
@@ -56,7 +60,6 @@ export interface MetricsChartModel {
 }
 
 const NO_UNIT_KEY = "__no_unit__";
-const MAX_CHART_PRECISION = 6;
 
 function rowTimestamp(row: ParsedMetricRow): number | null {
   const ts = row.metric?.ts;
@@ -103,17 +106,30 @@ function appendUniqueLineNumber(lineNumbers: number[], lineNumber: number): numb
   return lineNumbers.includes(lineNumber) ? lineNumbers : [...lineNumbers, lineNumber];
 }
 
-function clampPrecision(value: number): number {
-  return Math.max(0, Math.min(MAX_CHART_PRECISION, value));
+function rawRowValuePrecision(row: ParsedMetricRow): number {
+  return rawValuePrecision(row.rawLine);
 }
 
-function rawValuePrecision(row: ParsedMetricRow): number {
-  const match = /"value"\s*:\s*-?\d+(?:\.(\d+))?(?:[eE][+-]?\d+)?/.exec(row.rawLine);
-  return clampPrecision(match?.[1]?.length ?? 0);
-}
+function preferredPrecisionForRows(rows: ParsedMetricRow[]): {
+  maximumFractionDigits: number;
+  minimumFractionDigits: number;
+} {
+  return rows.reduce(
+    (current, row) => {
+      const digits = resolveMetricFractionDigits(row.metric?.key, row.metric?.unit, {
+        rawPrecision: rawRowValuePrecision(row),
+      });
 
-function maxPrecisionForRows(rows: ParsedMetricRow[]): number {
-  return rows.reduce((maxPrecision, row) => Math.max(maxPrecision, rawValuePrecision(row)), 0);
+      return {
+        maximumFractionDigits: Math.max(current.maximumFractionDigits, digits.maximumFractionDigits),
+        minimumFractionDigits: Math.max(current.minimumFractionDigits, digits.minimumFractionDigits),
+      };
+    },
+    {
+      maximumFractionDigits: 0,
+      minimumFractionDigits: 0,
+    },
+  );
 }
 
 function formatFixed(value: number, decimals: number): string {
@@ -123,11 +139,18 @@ function formatFixed(value: number, decimals: number): string {
   });
 }
 
-function resolveAxisPrecision(minValue: number, maxValue: number, minimumPrecision: number): number {
+function resolveAxisPrecision(
+  minValue: number,
+  maxValue: number,
+  minimumPrecision: number,
+  maximumPrecision: number,
+): number {
   const range = maxValue - minValue || 1;
   const guideValues = [maxValue, minValue + range * 0.75, minValue + range * 0.5, minValue + range * 0.25, minValue];
+  const lowerBound = Math.max(0, minimumPrecision);
+  const upperBound = Math.max(lowerBound, maximumPrecision);
 
-  for (let decimals = clampPrecision(minimumPrecision); decimals <= MAX_CHART_PRECISION; decimals += 1) {
+  for (let decimals = lowerBound; decimals <= upperBound; decimals += 1) {
     const labels = guideValues.map((value) => formatFixed(value, decimals));
     let unique = true;
     for (let index = 1; index < labels.length; index += 1) {
@@ -141,7 +164,7 @@ function resolveAxisPrecision(minValue: number, maxValue: number, minimumPrecisi
     }
   }
 
-  return MAX_CHART_PRECISION;
+  return upperBound;
 }
 
 function hasPlottableValue(row: ParsedMetricRow): boolean {
@@ -238,7 +261,7 @@ function buildDailyPanel(
   unitKey: string,
   unitLabel: string | null,
 ): MetricsChartPanel | null {
-  const valuePrecision = maxPrecisionForRows(rows);
+  const valuePrecision = preferredPrecisionForRows(rows);
   const seriesOrder = uniqueStrings(
     rows
       .map((row) => row.metric?.key)
@@ -278,7 +301,7 @@ function buildDailyPanel(
       key,
       label: key,
       lineNumbers: [row.lineNumber],
-      precision: rawValuePrecision(row),
+      precision: rawRowValuePrecision(row),
       timestamp: rowTimestamp(row) ?? bucketTimestamp,
       value,
     });
@@ -320,7 +343,12 @@ function buildDailyPanel(
 
   return {
     axisKind: "time",
-    axisPrecision: resolveAxisPrecision(valueRange.minValue, valueRange.maxValue, valuePrecision),
+    axisPrecision: resolveAxisPrecision(
+      valueRange.minValue,
+      valueRange.maxValue,
+      valuePrecision.minimumFractionDigits,
+      valuePrecision.maximumFractionDigits,
+    ),
     buckets,
     kind: "bar",
     maxValue: valueRange.maxValue,
@@ -339,7 +367,7 @@ function buildTemporalPanel(
   unitLabel: string | null,
   bucketByDay: boolean,
 ): MetricsChartPanel | null {
-  const valuePrecision = maxPrecisionForRows(rows);
+  const valuePrecision = preferredPrecisionForRows(rows);
   const seriesOrder = uniqueStrings(
     rows
       .map((row) => row.metric?.key)
@@ -380,7 +408,7 @@ function buildTemporalPanel(
       pointMap.set(bucketKey, {
         bucketKey,
         lineNumbers: appendUniqueLineNumber(existing?.lineNumbers ?? [], row.lineNumber),
-        precision: rawValuePrecision(row),
+        precision: rawRowValuePrecision(row),
         timestamp: bucketTimestamp,
         value,
       });
@@ -427,7 +455,12 @@ function buildTemporalPanel(
 
   return {
     axisKind: "time",
-    axisPrecision: resolveAxisPrecision(valueRange.minValue, valueRange.maxValue, valuePrecision),
+    axisPrecision: resolveAxisPrecision(
+      valueRange.minValue,
+      valueRange.maxValue,
+      valuePrecision.minimumFractionDigits,
+      valuePrecision.maximumFractionDigits,
+    ),
     buckets,
     kind: buckets.length >= 2 ? "line" : "bar",
     maxValue: valueRange.maxValue,
@@ -445,7 +478,7 @@ function buildSourcePanel(
   unitKey: string,
   unitLabel: string | null,
 ): MetricsChartPanel | null {
-  const valuePrecision = maxPrecisionForRows(rows);
+  const valuePrecision = preferredPrecisionForRows(rows);
   const bucketLineNumbers = new Map<string, number[]>();
   const bucketKeys = uniqueStrings(
     rows.map((row) => {
@@ -482,7 +515,7 @@ function buildSourcePanel(
       pointMap.set(source, {
         bucketKey: source,
         lineNumbers: [row.lineNumber],
-        precision: rawValuePrecision(row),
+        precision: rawRowValuePrecision(row),
         timestamp: rowTimestamp(row),
         value,
       });
@@ -523,7 +556,12 @@ function buildSourcePanel(
 
   return {
     axisKind: "category",
-    axisPrecision: resolveAxisPrecision(valueRange.minValue, valueRange.maxValue, valuePrecision),
+    axisPrecision: resolveAxisPrecision(
+      valueRange.minValue,
+      valueRange.maxValue,
+      valuePrecision.minimumFractionDigits,
+      valuePrecision.maximumFractionDigits,
+    ),
     buckets,
     kind: "bar",
     maxValue: valueRange.maxValue,
@@ -541,7 +579,7 @@ function buildKeyPanel(
   unitKey: string,
   unitLabel: string | null,
 ): MetricsChartPanel | null {
-  const valuePrecision = maxPrecisionForRows(rows);
+  const valuePrecision = preferredPrecisionForRows(rows);
   const buckets = uniqueStrings(
     rows.map((row) => {
       const key = row.metric?.key;
@@ -573,7 +611,7 @@ function buildKeyPanel(
       pointMap.set(key, {
         bucketKey: key,
         lineNumbers: [row.lineNumber],
-        precision: rawValuePrecision(row),
+        precision: rawRowValuePrecision(row),
         timestamp: rowTimestamp(row),
         value,
       });
@@ -603,7 +641,12 @@ function buildKeyPanel(
 
   return {
     axisKind: "category",
-    axisPrecision: resolveAxisPrecision(valueRange.minValue, valueRange.maxValue, valuePrecision),
+    axisPrecision: resolveAxisPrecision(
+      valueRange.minValue,
+      valueRange.maxValue,
+      valuePrecision.minimumFractionDigits,
+      valuePrecision.maximumFractionDigits,
+    ),
     buckets: bucketDefs.map((bucket) => ({
       ...bucket,
       lineNumbers: bucketLineNumbers.get(bucket.key) ?? [],
