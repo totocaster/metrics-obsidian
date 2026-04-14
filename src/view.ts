@@ -3,9 +3,59 @@ import { Menu, Notice, setIcon, TFile, TextFileView, WorkspaceLeaf } from "obsid
 import { toMetricReference, type MetricRecord } from "./contract";
 import type MetricsPlugin from "./main";
 import { metricIconForKey } from "./metric-icons";
-import { analyzeMetricsData, type ParsedMetricRow } from "./metrics-file-model";
+import {
+  analyzeMetricsData,
+  type MetricRowStatus,
+  type ParsedMetricRow,
+} from "./metrics-file-model";
 
 export const METRICS_VIEW_TYPE = "metrics-file-view";
+
+type MetricsSortOrder = "newest" | "oldest" | "value-desc" | "value-asc";
+type MetricsGroupBy = "none" | "day";
+type MetricsStatusFilter = "all" | MetricRowStatus;
+type MetricsTimeRange =
+  | "all"
+  | "today"
+  | "this-week"
+  | "past-7-days"
+  | "past-30-days"
+  | "this-month"
+  | "custom";
+
+interface MetricsViewState {
+  fromDate: string;
+  groupBy: MetricsGroupBy;
+  key: string;
+  searchText: string;
+  sortOrder: MetricsSortOrder;
+  source: string;
+  status: MetricsStatusFilter;
+  timeRange: MetricsTimeRange;
+  toDate: string;
+}
+
+interface ControlFocusState {
+  name: string;
+  selectionEnd?: number;
+  selectionStart?: number;
+}
+
+const DEFAULT_VIEW_STATE: MetricsViewState = {
+  fromDate: "",
+  groupBy: "none",
+  key: "",
+  searchText: "",
+  sortOrder: "newest",
+  source: "",
+  status: "all",
+  timeRange: "all",
+  toDate: "",
+};
+
+function createDefaultViewState(): MetricsViewState {
+  return { ...DEFAULT_VIEW_STATE };
+}
 
 export function logicalMetricsBaseName(fileName: string, extensions: string[]): string {
   const matchingExtension = extensions.find((extension) => fileName.endsWith(extension));
@@ -33,6 +83,306 @@ function formatMetricValue(row: ParsedMetricRow): string | null {
   }
 
   return typeof unit === "string" ? `${value} ${unit}` : `${value}`;
+}
+
+function rowTimestamp(row: ParsedMetricRow): number | null {
+  const ts = row.metric?.ts;
+  if (typeof ts !== "string") {
+    return null;
+  }
+
+  const parsed = Date.parse(ts);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function rowDateValue(row: ParsedMetricRow): string | null {
+  if (typeof row.metric?.date === "string" && row.metric.date.length === 10) {
+    return row.metric.date;
+  }
+
+  const ts = row.metric?.ts;
+  if (typeof ts !== "string" || ts.length < 10) {
+    return null;
+  }
+
+  const parsed = Date.parse(ts);
+  if (Number.isNaN(parsed)) {
+    return null;
+  }
+
+  return ts.slice(0, 10);
+}
+
+function toLocalDateString(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function startOfToday(): Date {
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function addDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function startOfWeek(date: Date): Date {
+  const next = new Date(date);
+  const day = next.getDay();
+  const offset = day === 0 ? -6 : 1 - day;
+  next.setDate(next.getDate() + offset);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+
+function startOfMonth(date: Date): Date {
+  const next = new Date(date);
+  next.setDate(1);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+
+function resolvedTimeRange(viewState: MetricsViewState): {
+  fromDate: string;
+  toDate: string;
+} {
+  const today = startOfToday();
+
+  switch (viewState.timeRange) {
+    case "today":
+      return {
+        fromDate: toLocalDateString(today),
+        toDate: toLocalDateString(today),
+      };
+    case "this-week":
+      return {
+        fromDate: toLocalDateString(startOfWeek(today)),
+        toDate: toLocalDateString(today),
+      };
+    case "past-7-days":
+      return {
+        fromDate: toLocalDateString(addDays(today, -6)),
+        toDate: toLocalDateString(today),
+      };
+    case "past-30-days":
+      return {
+        fromDate: toLocalDateString(addDays(today, -29)),
+        toDate: toLocalDateString(today),
+      };
+    case "this-month":
+      return {
+        fromDate: toLocalDateString(startOfMonth(today)),
+        toDate: toLocalDateString(today),
+      };
+    case "custom":
+      return {
+        fromDate: viewState.fromDate,
+        toDate: viewState.toDate,
+      };
+    case "all":
+    default:
+      return {
+        fromDate: "",
+        toDate: "",
+      };
+  }
+}
+
+function rowSearchText(row: ParsedMetricRow): string {
+  const parts = [
+    row.metric?.id,
+    row.metric?.key,
+    row.metric?.source,
+    row.metric?.origin_id,
+    row.metric?.note,
+    row.metric?.unit,
+    row.metric?.date,
+    row.rawLine,
+  ];
+
+  if (Array.isArray(row.metric?.tags)) {
+    parts.push(row.metric.tags.join(" "));
+  }
+
+  return parts
+    .filter((value): value is string => typeof value === "string" && value.length > 0)
+    .join(" ")
+    .toLowerCase();
+}
+
+function collectFilterValues(
+  rows: ParsedMetricRow[],
+  field: "key" | "source",
+): string[] {
+  return Array.from(
+    new Set(
+      rows
+        .map((row) => row.metric?.[field])
+        .filter((value): value is string => typeof value === "string" && value.length > 0),
+    ),
+  ).sort((left, right) => left.localeCompare(right));
+}
+
+function applyMetricsViewState(
+  rows: ParsedMetricRow[],
+  viewState: MetricsViewState,
+): ParsedMetricRow[] {
+  const normalizedSearch = viewState.searchText.trim().toLowerCase();
+  const { fromDate, toDate } = resolvedTimeRange(viewState);
+
+  const filteredRows = rows.filter((row) => {
+    if (viewState.key && row.metric?.key !== viewState.key) {
+      return false;
+    }
+
+    if (viewState.source && row.metric?.source !== viewState.source) {
+      return false;
+    }
+
+    if (viewState.status !== "all" && row.status !== viewState.status) {
+      return false;
+    }
+
+    const rowDate = rowDateValue(row);
+    if (fromDate && (!rowDate || rowDate < fromDate)) {
+      return false;
+    }
+
+    if (toDate && (!rowDate || rowDate > toDate)) {
+      return false;
+    }
+
+    if (normalizedSearch.length > 0 && !rowSearchText(row).includes(normalizedSearch)) {
+      return false;
+    }
+
+    return true;
+  });
+
+  return [...filteredRows].sort((left: ParsedMetricRow, right: ParsedMetricRow) => {
+    if (viewState.sortOrder === "newest") {
+      const leftTimestamp = rowTimestamp(left);
+      const rightTimestamp = rowTimestamp(right);
+      if (leftTimestamp !== null && rightTimestamp !== null && leftTimestamp !== rightTimestamp) {
+        return rightTimestamp - leftTimestamp;
+      }
+      if (leftTimestamp !== null) {
+        return -1;
+      }
+      if (rightTimestamp !== null) {
+        return 1;
+      }
+      return right.lineNumber - left.lineNumber;
+    }
+
+    if (viewState.sortOrder === "oldest") {
+      const leftTimestamp = rowTimestamp(left);
+      const rightTimestamp = rowTimestamp(right);
+      if (leftTimestamp !== null && rightTimestamp !== null && leftTimestamp !== rightTimestamp) {
+        return leftTimestamp - rightTimestamp;
+      }
+      if (leftTimestamp !== null) {
+        return -1;
+      }
+      if (rightTimestamp !== null) {
+        return 1;
+      }
+      return left.lineNumber - right.lineNumber;
+    }
+
+    if (viewState.sortOrder === "value-desc" || viewState.sortOrder === "value-asc") {
+      const leftValue = left.metric?.value;
+      const rightValue = right.metric?.value;
+      const leftIsNumber = typeof leftValue === "number" && Number.isFinite(leftValue);
+      const rightIsNumber = typeof rightValue === "number" && Number.isFinite(rightValue);
+
+      if (leftIsNumber && rightIsNumber && leftValue !== rightValue) {
+        return viewState.sortOrder === "value-desc"
+          ? rightValue - leftValue
+          : leftValue - rightValue;
+      }
+
+      if (leftIsNumber) {
+        return -1;
+      }
+
+      if (rightIsNumber) {
+        return 1;
+      }
+    }
+
+    return right.lineNumber - left.lineNumber;
+  });
+}
+
+function hasActiveViewControls(viewState: MetricsViewState): boolean {
+  return hasActivePrimaryControls(viewState) || advancedControlCount(viewState) > 0;
+}
+
+function hasActivePrimaryControls(viewState: MetricsViewState): boolean {
+  return (
+    viewState.key.length > 0 ||
+    viewState.searchText.trim().length > 0 ||
+    viewState.sortOrder !== DEFAULT_VIEW_STATE.sortOrder
+  );
+}
+
+function hasActiveTimeRange(viewState: MetricsViewState): boolean {
+  if (viewState.timeRange === "all") {
+    return false;
+  }
+
+  if (viewState.timeRange === "custom") {
+    return viewState.fromDate.length > 0 || viewState.toDate.length > 0;
+  }
+
+  return true;
+}
+
+function advancedControlCount(viewState: MetricsViewState): number {
+  let count = 0;
+
+  if (viewState.source.length > 0) {
+    count += 1;
+  }
+
+  if (viewState.status !== "all") {
+    count += 1;
+  }
+
+  if (viewState.groupBy !== "none") {
+    count += 1;
+  }
+
+  return count;
+}
+
+function groupRowsByDay(rows: ParsedMetricRow[]): Array<{
+  heading: string;
+  key: string;
+  rows: ParsedMetricRow[];
+}> {
+  const groups = new Map<string, ParsedMetricRow[]>();
+
+  rows.forEach((row) => {
+    const day = rowDateValue(row);
+    const key = day ?? "__no_date__";
+    const current = groups.get(key) ?? [];
+    current.push(row);
+    groups.set(key, current);
+  });
+
+  return Array.from(groups.entries()).map(([key, groupedRows]) => ({
+    heading: key === "__no_date__" ? "No date" : `[[${key}]]`,
+    key,
+    rows: groupedRows,
+  }));
 }
 
 function isEditableRecord(metric: Partial<MetricRecord> | null): metric is MetricRecord {
@@ -292,8 +642,11 @@ function renderRecord(
 
 export class MetricsFileView extends TextFileView {
   allowNoFile = true;
+  private advancedControlsExpanded = false;
   private clearTargetedRecordTimeout: number | null = null;
+  private pendingControlFocus: ControlFocusState | null = null;
   private pendingMetricIdFocus: string | null = null;
+  private viewState: MetricsViewState = createDefaultViewState();
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -364,6 +717,8 @@ export class MetricsFileView extends TextFileView {
   }
 
   focusMetricRecord(metricId: string): void {
+    this.viewState = createDefaultViewState();
+    this.advancedControlsExpanded = false;
     this.pendingMetricIdFocus = metricId;
     this.render();
   }
@@ -382,6 +737,15 @@ export class MetricsFileView extends TextFileView {
     }
 
     const analysis = analyzeMetricsData(this.data ?? "");
+    const availableKeys = collectFilterValues(analysis.rows, "key");
+    const availableSources = collectFilterValues(analysis.rows, "source");
+    this.normalizeViewState(availableKeys, availableSources);
+    const visibleRows = applyMetricsViewState(analysis.rows, this.viewState);
+    const hasActiveControls = hasActiveViewControls(this.viewState);
+
+    if (analysis.rows.length > 0 || hasActiveControls) {
+      this.renderControls(container, availableKeys, availableSources);
+    }
 
     if (analysis.issueSummary.length > 0) {
       const issuesSection = container.createDiv({ cls: "metrics-lens-section" });
@@ -399,31 +763,81 @@ export class MetricsFileView extends TextFileView {
         cls: "metrics-lens-section",
         text: "No records in this file yet.",
       });
+    } else if (visibleRows.length === 0) {
+      const emptyState = container.createDiv({ cls: "metrics-lens-section" });
+      emptyState.createEl("p", {
+        cls: "metrics-lens-empty",
+        text: "No records match the current view.",
+      });
+
+      if (hasActiveControls) {
+        const resetButton = emptyState.createEl("button", { text: "Reset view" });
+        resetButton.type = "button";
+        resetButton.setAttribute("aria-label", "Reset current filters and sorting");
+        resetButton.addEventListener("click", () => {
+          this.viewState = createDefaultViewState();
+          this.render();
+        });
+      }
     } else {
       const recordsSection = container.createDiv({ cls: "metrics-lens-section" });
-      const recordsList = recordsSection.createDiv({ cls: "metrics-lens-records" });
-      analysis.rows.forEach((row, index) => {
-        renderRecord(
-          recordsList,
-          row,
-          this.plugin,
-          this.file as TFile,
-          this.plugin.settings.recordReferencePrefix,
-          {
-            isFirst: index === 0,
-            isLast: index === analysis.rows.length - 1,
-          },
-        );
-      });
+      if (this.viewState.groupBy === "day") {
+        groupRowsByDay(visibleRows).forEach((group) => {
+          const groupSection = recordsSection.createDiv({ cls: "metrics-lens-group" });
+          groupSection.createEl("h2", {
+            cls: "metrics-lens-group-heading",
+            text: group.heading,
+          });
+
+          const recordsList = groupSection.createDiv({ cls: "metrics-lens-records" });
+          group.rows.forEach((row, index) => {
+            renderRecord(
+              recordsList,
+              row,
+              this.plugin,
+              this.file as TFile,
+              this.plugin.settings.recordReferencePrefix,
+              {
+                isFirst: index === 0,
+                isLast: index === group.rows.length - 1,
+              },
+            );
+          });
+        });
+      } else {
+        const recordsList = recordsSection.createDiv({ cls: "metrics-lens-records" });
+        visibleRows.forEach((row, index) => {
+          renderRecord(
+            recordsList,
+            row,
+            this.plugin,
+            this.file as TFile,
+            this.plugin.settings.recordReferencePrefix,
+            {
+              isFirst: index === 0,
+              isLast: index === visibleRows.length - 1,
+            },
+          );
+        });
+      }
     }
 
-    const summaryParts = [`${analysis.totalRows} rows`];
+    const summaryParts =
+      visibleRows.length === analysis.totalRows
+        ? [`${analysis.totalRows} rows`]
+        : [`${visibleRows.length} of ${analysis.totalRows} rows`];
     const flaggedRows = analysis.warningRows + analysis.errorRows;
     if (flaggedRows > 0) {
       summaryParts.push(`${flaggedRows} flagged`);
     }
     if (analysis.legacyRows > 0) {
       summaryParts.push(`${analysis.legacyRows} missing ids`);
+    }
+    if (this.viewState.sortOrder !== "newest") {
+      summaryParts.push(this.sortOrderLabel(this.viewState.sortOrder));
+    }
+    if (this.viewState.groupBy === "day") {
+      summaryParts.push("grouped by day");
     }
 
     const footer = container.createDiv({ cls: "metrics-lens-footer" });
@@ -446,6 +860,273 @@ export class MetricsFileView extends TextFileView {
     }
 
     this.revealPendingMetricRecord();
+    this.restorePendingControlFocus();
+  }
+
+  private renderControls(
+    container: HTMLElement,
+    availableKeys: string[],
+    availableSources: string[],
+  ): void {
+    const controls = container.createDiv({ cls: ["metrics-lens-section", "metrics-lens-controls"] });
+    const primaryControls = controls.createDiv({ cls: "metrics-lens-primary-controls" });
+    const showAdvancedControls = this.advancedControlsExpanded;
+    const activeAdvancedControls = advancedControlCount(this.viewState);
+
+    const timeRangeSelect = primaryControls.createEl("select", { cls: "metrics-lens-control" });
+    timeRangeSelect.dataset.metricsControl = "timeRange";
+    timeRangeSelect.setAttribute("aria-label", "Filter by time range");
+    [
+      { label: "All time", value: "all" },
+      { label: "Today", value: "today" },
+      { label: "This week", value: "this-week" },
+      { label: "Past 7 days", value: "past-7-days" },
+      { label: "Past 30 days", value: "past-30-days" },
+      { label: "This month", value: "this-month" },
+      { label: "Custom range", value: "custom" },
+    ].forEach((option) => {
+      timeRangeSelect.createEl("option", {
+        text: option.label,
+        value: option.value,
+      });
+    });
+    timeRangeSelect.value = this.viewState.timeRange;
+    timeRangeSelect.addEventListener("change", () => {
+      this.pendingControlFocus = { name: "timeRange" };
+      this.viewState.timeRange = timeRangeSelect.value as MetricsTimeRange;
+      this.render();
+    });
+
+    if (this.viewState.timeRange === "custom") {
+      const fromDateInput = primaryControls.createEl("input", {
+        cls: "metrics-lens-control",
+        type: "date",
+      });
+      fromDateInput.dataset.metricsControl = "fromDate";
+      fromDateInput.value = this.viewState.fromDate;
+      fromDateInput.setAttribute("aria-label", "Filter from date");
+      fromDateInput.addEventListener("change", () => {
+        this.pendingControlFocus = this.controlFocusState("fromDate", fromDateInput);
+        this.viewState.fromDate = fromDateInput.value;
+        this.render();
+      });
+
+      const toDateInput = primaryControls.createEl("input", {
+        cls: "metrics-lens-control",
+        type: "date",
+      });
+      toDateInput.dataset.metricsControl = "toDate";
+      toDateInput.value = this.viewState.toDate;
+      toDateInput.setAttribute("aria-label", "Filter to date");
+      toDateInput.addEventListener("change", () => {
+        this.pendingControlFocus = this.controlFocusState("toDate", toDateInput);
+        this.viewState.toDate = toDateInput.value;
+        this.render();
+      });
+    }
+
+    const keySelect = primaryControls.createEl("select", { cls: "metrics-lens-control" });
+    keySelect.dataset.metricsControl = "key";
+    keySelect.setAttribute("aria-label", "Filter by metric");
+    keySelect.createEl("option", {
+      text: "All metrics",
+      value: "",
+    });
+    availableKeys.forEach((key) => {
+      keySelect.createEl("option", {
+        text: key,
+        value: key,
+      });
+    });
+    keySelect.value = this.viewState.key;
+    keySelect.addEventListener("change", () => {
+      this.pendingControlFocus = { name: "key" };
+      this.viewState.key = keySelect.value;
+      this.render();
+    });
+
+    const searchInput = primaryControls.createEl("input", {
+      cls: "metrics-lens-control metrics-lens-search",
+      type: "search",
+    });
+    searchInput.value = this.viewState.searchText;
+    searchInput.placeholder = "Search";
+    searchInput.setAttribute("aria-label", "Search metrics in the current file");
+    searchInput.dataset.metricsControl = "search";
+    searchInput.addEventListener("input", () => {
+      this.pendingControlFocus = this.controlFocusState("search", searchInput);
+      this.viewState.searchText = searchInput.value;
+      this.render();
+    });
+
+    const sortButton = primaryControls.createEl("button", {
+      cls: ["clickable-icon", "metrics-lens-icon-button"],
+    });
+    sortButton.type = "button";
+    sortButton.dataset.metricsControl = "sort";
+    sortButton.setAttribute("aria-label", `Sort metrics: ${this.sortOrderLabel(this.viewState.sortOrder)}`);
+    sortButton.setAttribute("data-tooltip-position", "top");
+    setIcon(sortButton, "arrow-up-down");
+    sortButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const menu = new Menu();
+      [
+        { label: "Newest first", value: "newest" as MetricsSortOrder },
+        { label: "Oldest first", value: "oldest" as MetricsSortOrder },
+        { label: "Value high-low", value: "value-desc" as MetricsSortOrder },
+        { label: "Value low-high", value: "value-asc" as MetricsSortOrder },
+      ].forEach((option) => {
+        menu.addItem((item) => {
+          item
+            .setTitle(option.label)
+            .setChecked(this.viewState.sortOrder === option.value)
+            .onClick(() => {
+              this.pendingControlFocus = { name: "sort" };
+              this.viewState.sortOrder = option.value;
+              this.render();
+            });
+        });
+      });
+
+      menu.showAtMouseEvent(event);
+    });
+
+    const moreButton = primaryControls.createEl("button", {
+      cls: ["clickable-icon", "metrics-lens-icon-button", "metrics-lens-more-controls-button"],
+    });
+    moreButton.type = "button";
+    moreButton.dataset.metricsControl = "more";
+    moreButton.setAttribute(
+      "aria-label",
+      showAdvancedControls
+        ? "Hide more filters"
+        : activeAdvancedControls > 0
+          ? `Show more filters (${activeAdvancedControls} active)`
+          : "Show more filters",
+    );
+    moreButton.setAttribute("data-tooltip-position", "top");
+    setIcon(moreButton, "sliders-horizontal");
+    moreButton.toggleClass("is-active", showAdvancedControls || activeAdvancedControls > 0);
+    moreButton.addEventListener("click", () => {
+      this.pendingControlFocus = { name: "more" };
+      this.advancedControlsExpanded = !this.advancedControlsExpanded;
+      this.render();
+    });
+
+    if (showAdvancedControls) {
+      const advancedControls = controls.createDiv({ cls: "metrics-lens-advanced-controls" });
+
+      const sourceSelect = advancedControls.createEl("select", { cls: "metrics-lens-control" });
+      sourceSelect.dataset.metricsControl = "source";
+      sourceSelect.setAttribute("aria-label", "Filter by source");
+      sourceSelect.createEl("option", {
+        text: "All sources",
+        value: "",
+      });
+      availableSources.forEach((source) => {
+        sourceSelect.createEl("option", {
+          text: source,
+          value: source,
+        });
+      });
+      sourceSelect.value = this.viewState.source;
+      sourceSelect.addEventListener("change", () => {
+        this.pendingControlFocus = { name: "source" };
+        this.viewState.source = sourceSelect.value;
+        this.render();
+      });
+
+      const statusSelect = advancedControls.createEl("select", { cls: "metrics-lens-control" });
+      statusSelect.dataset.metricsControl = "status";
+      statusSelect.setAttribute("aria-label", "Filter by validation status");
+      [
+        { label: "All statuses", value: "all" },
+        { label: "Valid", value: "valid" },
+        { label: "Warnings", value: "warning" },
+        { label: "Errors", value: "error" },
+      ].forEach((option) => {
+        statusSelect.createEl("option", {
+          text: option.label,
+          value: option.value,
+        });
+      });
+      statusSelect.value = this.viewState.status;
+      statusSelect.addEventListener("change", () => {
+        this.pendingControlFocus = { name: "status" };
+        this.viewState.status = statusSelect.value as MetricsStatusFilter;
+        this.render();
+      });
+
+      const groupBySelect = advancedControls.createEl("select", { cls: "metrics-lens-control" });
+      groupBySelect.dataset.metricsControl = "groupBy";
+      groupBySelect.setAttribute("aria-label", "Group metrics");
+      [
+        { label: "No grouping", value: "none" },
+        { label: "Group by day", value: "day" },
+      ].forEach((option) => {
+        groupBySelect.createEl("option", {
+          text: option.label,
+          value: option.value,
+        });
+      });
+      groupBySelect.value = this.viewState.groupBy;
+      groupBySelect.addEventListener("change", () => {
+        this.pendingControlFocus = { name: "groupBy" };
+        this.viewState.groupBy = groupBySelect.value as MetricsGroupBy;
+        this.render();
+      });
+    }
+
+    if (hasActiveViewControls(this.viewState)) {
+      const resetButton = primaryControls.createEl("button", {
+        cls: "metrics-lens-reset-view-button",
+        text: "Reset",
+      });
+      resetButton.type = "button";
+      resetButton.setAttribute("aria-label", "Reset current filters and sorting");
+      resetButton.addEventListener("click", () => {
+        this.viewState = createDefaultViewState();
+        this.advancedControlsExpanded = false;
+        this.render();
+      });
+    }
+  }
+
+  private normalizeViewState(availableKeys: string[], availableSources: string[]): void {
+    if (this.viewState.key && !availableKeys.includes(this.viewState.key)) {
+      this.viewState.key = "";
+    }
+
+    if (this.viewState.source && !availableSources.includes(this.viewState.source)) {
+      this.viewState.source = "";
+    }
+
+    if (
+      this.viewState.timeRange === "custom" &&
+      this.viewState.fromDate &&
+      this.viewState.toDate &&
+      this.viewState.fromDate > this.viewState.toDate
+    ) {
+      const nextFromDate = this.viewState.toDate;
+      this.viewState.toDate = this.viewState.fromDate;
+      this.viewState.fromDate = nextFromDate;
+    }
+  }
+
+  private sortOrderLabel(sortOrder: MetricsSortOrder): string {
+    switch (sortOrder) {
+      case "oldest":
+        return "oldest first";
+      case "value-desc":
+        return "value high-low";
+      case "value-asc":
+        return "value low-high";
+      case "newest":
+      default:
+        return "newest first";
+    }
   }
 
   private revealPendingMetricRecord(): void {
@@ -476,5 +1157,45 @@ export class MetricsFileView extends TextFileView {
       targetEl.removeClass("is-targeted");
       this.clearTargetedRecordTimeout = null;
     }, 1800);
+  }
+
+  private restorePendingControlFocus(): void {
+    if (!this.pendingControlFocus) {
+      return;
+    }
+
+    const focusState = this.pendingControlFocus;
+    this.pendingControlFocus = null;
+
+    const targetEl = this.contentEl.querySelector<HTMLElement>(
+      `[data-metrics-control="${focusState.name}"]`,
+    );
+    if (!targetEl) {
+      return;
+    }
+
+    targetEl.focus({ preventScroll: true });
+    if (
+      targetEl instanceof HTMLInputElement &&
+      typeof focusState.selectionStart === "number" &&
+      typeof focusState.selectionEnd === "number"
+    ) {
+      targetEl.setSelectionRange(focusState.selectionStart, focusState.selectionEnd);
+    }
+  }
+
+  private controlFocusState(
+    name: string,
+    element: HTMLInputElement | HTMLSelectElement,
+  ): ControlFocusState {
+    if (element instanceof HTMLInputElement) {
+      return {
+        name,
+        selectionEnd: element.selectionEnd ?? undefined,
+        selectionStart: element.selectionStart ?? undefined,
+      };
+    }
+
+    return { name };
   }
 }
