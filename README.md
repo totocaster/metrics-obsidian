@@ -11,6 +11,7 @@ Metrics is a file-first Obsidian plugin for working with `*.metrics.ndjson` data
 - Parses and validates records line by line
 - Supports record create, edit, delete, and missing-id assignment
 - Supports metrics file create, rename, and delete
+- Adds a command-palette search to find measurements across metrics files and open the matching row
 - Renders records as a compact timeline with optional metric icons
 - Uses a catalog-backed registry for supported metric labels, units, icons, and formatting
 - Lets lists and selectors show either friendly metric names or canonical keys
@@ -111,8 +112,9 @@ Unknown keys are still allowed by the file contract, but they are treated as out
 
 ## Commands and actions
 
-The plugin currently supports commands and title-bar actions for:
+The plugin currently supports commands for:
 
+- searching measurements across metrics files and opening the matching row
 - creating a metrics file
 - renaming the current metrics file
 - deleting the current metrics file
@@ -142,7 +144,7 @@ This repo is designed to be linked into an Obsidian vault during development so 
 
 ## Status
 
-This project is in active `0.1.x` development. The current phase covers the file contract, current-file CRUD, file lifecycle, filtering, grouping, and charting for plaintext metrics files.
+This project is in active `0.1.x` development. The current phase covers the file contract, current-file CRUD, file lifecycle, file search, filtering, grouping, and charting for plaintext metrics files.
 
 For implementation detail and current scope, see:
 

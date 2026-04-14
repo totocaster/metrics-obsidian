@@ -26,6 +26,7 @@ Implemented today:
 
 - contract and scaffold
 - file-backed metrics view
+- command-palette metrics search and open
 - line-by-line parsing and validation
 - missing-id assignment for legacy rows
 - current-file record CRUD
@@ -118,6 +119,10 @@ Important contract decisions:
 
 - `src/metrics-file-modal.ts`
   - create/rename file path modal
+
+- `src/metrics-search-modal.ts`
+  - command-palette metrics search results across the configured root
+  - opens the matching row in the metrics view
 
 - `src/metric-record-modal.ts`
   - record create/edit modal
@@ -245,9 +250,9 @@ When changing product behavior, keep these docs aligned:
 
 Most likely next areas of work:
 
-1. Cross-file navigation and search
-2. File-level polish
-3. Group-collapse behavior
-4. Additional chart polish and drill-down
+1. File-level polish
+2. Group-collapse behavior
+3. Additional chart polish and drill-down
+4. Cross-file search refinement if the lightweight search needs expansion
 
 If scope is unclear, default back to the contract in `docs/spec.md` and keep the plugin focused on plaintext metrics files.

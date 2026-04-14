@@ -1182,12 +1182,11 @@ export class MetricsFileView extends TextFileView {
   allowNoFile = true;
   private advancedControlsExpanded = false;
   private addRecordActionEl: HTMLElement | null = null;
-  private actionsSeparatorEl: HTMLElement | null = null;
   private chartActionEl: HTMLElement | null = null;
   private clearTargetedRecordTimeout: number | null = null;
-  private fileActionsActionEl: HTMLElement | null = null;
   private filterActionEl: HTMLElement | null = null;
   private pendingControlFocus: ControlFocusState | null = null;
+  private pendingMetricLineNumberFocus: number | null = null;
   private pendingMetricIdFocus: string | null = null;
   private sortActionEl: HTMLElement | null = null;
   private viewState: MetricsViewState = createDefaultViewState();
@@ -1264,19 +1263,26 @@ export class MetricsFileView extends TextFileView {
     this.viewState.showChart = showChart;
     this.viewState.showFilters = showFilters;
     this.advancedControlsExpanded = false;
+    this.pendingMetricLineNumberFocus = null;
     this.pendingMetricIdFocus = metricId;
     this.render();
   }
 
-  private ensureHeaderActions(): void {
-    if (!this.fileActionsActionEl) {
-      this.fileActionsActionEl = this.addAction("files", "Metrics file actions", () => {
-        const actionEl = this.fileActionsActionEl;
-        const rect = actionEl?.getBoundingClientRect();
-        this.plugin.openMetricsFileActionsMenu(this.file, rect ?? undefined);
-      });
+  focusMetricLineNumber(lineNumber: number): void {
+    if (this.file) {
+      this.viewStateFilePath = this.file.path;
     }
+    const { showChart, showFilters } = this.viewState;
+    this.viewState = createDefaultViewState();
+    this.viewState.showChart = showChart;
+    this.viewState.showFilters = showFilters;
+    this.advancedControlsExpanded = false;
+    this.pendingMetricIdFocus = null;
+    this.pendingMetricLineNumberFocus = lineNumber;
+    this.render();
+  }
 
+  private ensureHeaderActions(): void {
     if (!this.sortActionEl) {
       this.sortActionEl = this.addAction("arrow-up-down", "Sort metrics", () => {
         if (!this.file) {
@@ -1330,7 +1336,6 @@ export class MetricsFileView extends TextFileView {
       this.chartActionEl &&
       this.filterActionEl &&
       this.sortActionEl &&
-      this.fileActionsActionEl &&
       this.addRecordActionEl.parentElement
     ) {
       const actionsContainer = this.addRecordActionEl.parentElement;
@@ -1341,20 +1346,12 @@ export class MetricsFileView extends TextFileView {
         });
       }
 
-      if (!this.actionsSeparatorEl) {
-        this.actionsSeparatorEl = actionsContainer.createDiv({
-          cls: "metrics-lens-view-action-separator",
-        });
-      }
-
       [
         this.addRecordActionEl,
         this.viewActionSeparatorEl,
         this.chartActionEl,
         this.filterActionEl,
         this.sortActionEl,
-        this.actionsSeparatorEl,
-        this.fileActionsActionEl,
       ].forEach((element) => {
         actionsContainer.appendChild(element);
       });
@@ -1372,11 +1369,6 @@ export class MetricsFileView extends TextFileView {
       : activeFilterBarControls > 0
         ? `Show filters (${activeFilterBarControls} active)`
         : "Show filters";
-
-    if (this.fileActionsActionEl) {
-      this.fileActionsActionEl.setAttribute("aria-label", "Metrics file actions");
-      this.fileActionsActionEl.setAttribute("data-tooltip-position", "bottom");
-    }
 
     if (this.chartActionEl) {
       this.chartActionEl.toggleClass("is-active", this.viewState.showChart);
@@ -1981,18 +1973,31 @@ export class MetricsFileView extends TextFileView {
   }
 
   private revealPendingMetricRecord(): void {
-    if (!this.pendingMetricIdFocus) {
+    if (this.pendingMetricIdFocus) {
+      const targetId = this.pendingMetricIdFocus;
+      const targetEl = this.contentEl.querySelector<HTMLElement>(`[data-metric-id="${targetId}"]`);
+      if (!targetEl) {
+        return;
+      }
+
+      this.pendingMetricIdFocus = null;
+      this.pendingMetricLineNumberFocus = null;
+      this.highlightRecordElements([targetEl]);
       return;
     }
 
-    const targetId = this.pendingMetricIdFocus;
-    const targetEl = this.contentEl.querySelector<HTMLElement>(`[data-metric-id="${targetId}"]`);
+    if (this.pendingMetricLineNumberFocus === null) {
+      return;
+    }
+
+    const targetEl = this.contentEl.querySelector<HTMLElement>(
+      `[data-metrics-line-number="${this.pendingMetricLineNumberFocus}"]`,
+    );
     if (!targetEl) {
       return;
     }
 
-    this.pendingMetricIdFocus = null;
-
+    this.pendingMetricLineNumberFocus = null;
     this.highlightRecordElements([targetEl]);
   }
 

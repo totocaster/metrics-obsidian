@@ -1,6 +1,5 @@
 import {
   FileView,
-  Menu,
   Notice,
   Plugin,
   TFile,
@@ -14,6 +13,7 @@ import {
 } from "./contract";
 import { displayMetricName } from "./metric-catalog";
 import { MetricRecordModal } from "./metric-record-modal";
+import { formatMetricDisplayValue, rawValuePrecision } from "./metric-value-format";
 import {
   appendMetricRecordToMetricsData,
   assignMissingIdsToMetricsData,
@@ -22,7 +22,9 @@ import {
   type MetricRecordInput,
   updateMetricRecordInMetricsData,
 } from "./metrics-file-mutation";
+import { analyzeMetricsData, type ParsedMetricRow } from "./metrics-file-model";
 import { MetricsFileModal } from "./metrics-file-modal";
+import { MetricsSearchModal, type MetricsSearchResult } from "./metrics-search-modal";
 import { DEFAULT_SETTINGS, MetricsPluginSettings, MetricsSettingTab, normalizeMetricsSettings } from "./settings";
 import { logicalMetricsBaseName, METRICS_VIEW_TYPE, MetricsFileView } from "./view";
 import {
@@ -31,6 +33,81 @@ import {
   type MetricsViewState,
   type PersistedMetricsViewState,
 } from "./view-state";
+
+function normalizeMetricsSearchContent(content: string): string {
+  return content.replace(/\s+/g, " ").trim();
+}
+
+function relativeMetricsSearchPath(path: string, metricsRoot: string, supportedExtensions: string[]): string {
+  const normalizedRoot = normalizePath(metricsRoot);
+  let relativePath = path.startsWith(`${normalizedRoot}/`) ? path.slice(normalizedRoot.length + 1) : path;
+  const matchingExtension = supportedExtensions.find((extension) => relativePath.endsWith(extension));
+  if (matchingExtension) {
+    relativePath = relativePath.slice(0, -matchingExtension.length);
+  }
+  return relativePath;
+}
+
+function searchResultValueLabel(row: ParsedMetricRow): string | null {
+  const value = row.metric?.value;
+  if (typeof value !== "number") {
+    return null;
+  }
+
+  return formatMetricDisplayValue(value, row.metric?.unit, {
+    includeUnit: true,
+    metricKey: row.metric?.key,
+    rawPrecision: rawValuePrecision(row.rawLine),
+  });
+}
+
+function searchResultTimestampLabel(row: ParsedMetricRow): string | null {
+  if (typeof row.metric?.date === "string" && row.metric.date.length > 0) {
+    return row.metric.date;
+  }
+
+  if (typeof row.metric?.ts === "string" && row.metric.ts.length > 0) {
+    return row.metric.ts;
+  }
+
+  return null;
+}
+
+function buildMetricsSearchResult(
+  file: TFile,
+  row: ParsedMetricRow,
+  metricsRoot: string,
+  supportedExtensions: string[],
+  metricNameDisplayMode: MetricsPluginSettings["metricNameDisplayMode"],
+): MetricsSearchResult {
+  const metricLabel = displayMetricName(row.metric?.key, metricNameDisplayMode);
+  const valueLabel = searchResultValueLabel(row);
+  const timestampLabel = searchResultTimestampLabel(row);
+  const sourceLabel =
+    typeof row.metric?.source === "string" && row.metric.source.length > 0 ? row.metric.source : null;
+  const noteLabel =
+    typeof row.metric?.note === "string" && row.metric.note.length > 0 ? row.metric.note : null;
+  const primaryText = valueLabel ? `${metricLabel} ${valueLabel}` : metricLabel;
+  const secondaryParts = [timestampLabel, sourceLabel].filter(
+    (value): value is string => typeof value === "string" && value.length > 0,
+  );
+  if (noteLabel) {
+    secondaryParts.push(noteLabel);
+  }
+  const displayPath = relativeMetricsSearchPath(file.path, metricsRoot, supportedExtensions);
+
+  return {
+    file,
+    lineNumber: row.lineNumber,
+    metricId: typeof row.metric?.id === "string" && row.metric.id.length > 0 ? row.metric.id : null,
+    primaryText,
+    secondaryText: secondaryParts.length > 0 ? secondaryParts.join(" · ") : null,
+    searchText: normalizeMetricsSearchContent(
+      [displayPath, metricLabel, row.rawLine].filter((value) => value.length > 0).join(" "),
+    ),
+    tertiaryText: `${displayPath} · line ${row.lineNumber}`,
+  };
+}
 
 export default class MetricsPlugin extends Plugin {
   settings: MetricsPluginSettings = DEFAULT_SETTINGS;
@@ -98,6 +175,14 @@ export default class MetricsPlugin extends Plugin {
         }
 
         return true;
+      },
+    });
+
+    this.addCommand({
+      id: "search",
+      name: "Search metrics",
+      callback: () => {
+        void this.openMetricsSearchModal();
       },
     });
 
@@ -444,6 +529,50 @@ export default class MetricsPlugin extends Plugin {
     modal.open();
   }
 
+  async openMetricsSearchModal(): Promise<void> {
+    const files = this.metricsFilesInScope();
+    if (files.length === 0) {
+      new Notice(`No metrics files were found under ${this.settings.metricsRoot}.`);
+      return;
+    }
+    const results = (
+      await Promise.all(
+        files.map(async (file) => {
+          try {
+            const content = await this.app.vault.cachedRead(file);
+            return analyzeMetricsData(content).rows.map((row) =>
+              buildMetricsSearchResult(
+                file,
+                row,
+                this.settings.metricsRoot,
+                this.settings.supportedExtensions,
+                this.settings.metricNameDisplayMode,
+              ),
+            );
+          } catch {
+            return [] as MetricsSearchResult[];
+          }
+        }),
+      )
+    ).flat();
+
+    if (results.length === 0) {
+      new Notice(`No searchable measurements were found under ${this.settings.metricsRoot}.`);
+      return;
+    }
+
+    const modal = new MetricsSearchModal(
+      this.app,
+      {
+        results,
+      },
+      (result) => {
+        void this.openMetricsSearchResult(result);
+      },
+    );
+    modal.open();
+  }
+
   async createRecord(file: TFile, recordInput: MetricRecordInput): Promise<void> {
     try {
       let createdId = "";
@@ -495,64 +624,6 @@ export default class MetricsPlugin extends Plugin {
     }
 
     void this.deleteRecord(file, record.id);
-  }
-
-  openMetricsFileActionsMenu(file: TFile | null, position?: DOMRect): void {
-    const menu = new Menu();
-
-    menu.addItem((item) => {
-      item.setTitle("New metrics file").setIcon("file-plus").onClick(() => {
-        const initialValue =
-          file && this.isMetricsFile(file)
-            ? this.relativeMetricsFolderPath(file.path)
-            : "";
-        this.openCreateMetricsFileModal(initialValue);
-      });
-    });
-
-    menu.addSeparator();
-
-    menu.addItem((item) => {
-      item
-        .setTitle("Rename current file")
-        .setIcon("pencil")
-        .setDisabled(!file)
-        .onClick(() => {
-          if (!file) {
-            return;
-          }
-          this.openRenameMetricsFileModal(file);
-        });
-    });
-
-    menu.addItem((item) => {
-      item
-        .setTitle("Delete current file")
-        .setIcon("trash")
-        .setDisabled(!file)
-        .setWarning(true)
-        .onClick(() => {
-          if (!file) {
-            return;
-          }
-          this.confirmDeleteMetricsFile(file);
-        });
-    });
-
-    if (position) {
-      menu.showAtPosition({
-        overlap: true,
-        width: position.width,
-        x: position.left,
-        y: position.bottom,
-      });
-      return;
-    }
-
-    menu.showAtPosition({
-      x: window.innerWidth / 2,
-      y: 80,
-    });
   }
 
   async createMetricsFile(input: string): Promise<void> {
@@ -638,6 +709,24 @@ export default class MetricsPlugin extends Plugin {
       state: { file: file.path },
       active: true,
     });
+  }
+
+  private async openMetricsSearchResult(result: MetricsSearchResult): Promise<void> {
+    const leaf = this.metricReferenceLeaf(result.file);
+    await this.openMetricsFile(result.file, leaf);
+    if (!leaf) {
+      return;
+    }
+
+    if (leaf.view instanceof MetricsFileView) {
+      if (result.metricId) {
+        leaf.view.focusMetricRecord(result.metricId);
+      } else {
+        leaf.view.focusMetricLineNumber(result.lineNumber);
+      }
+    }
+
+    this.app.workspace.revealLeaf(leaf);
   }
 
   private handleMutationError(error: unknown): void {

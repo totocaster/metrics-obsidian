@@ -6,11 +6,11 @@
 - Contract status: locked for the current file-first metrics phase
 - Scaffold status: complete in this repository
 - Vault dev status: linked into the live `totocaster` vault for real-time testing
-- Scope status: contract, scaffold, file lifecycle, current-file metrics lens, and current-file charting are implemented
-- Current implementation status: file-backed metrics timeline view, record parsing, catalog-backed validation and labels, missing-id migration, current-file CRUD, metrics file create/rename/delete, per-file filter-bar/filter/sort persistence, grouping by day, metric, and source, per-group derived summary rows, and interactive charts are working
+- Scope status: contract, scaffold, file lifecycle, current-file metrics lens, current-file charting, and command-palette metrics search are implemented
+- Current implementation status: file-backed metrics timeline view, record parsing, catalog-backed validation and labels, missing-id migration, current-file CRUD, metrics file create/rename/delete, command-palette metrics search/open across files, per-file filter-bar/filter/sort persistence, grouping by day, metric, and source, per-group derived summary rows, and interactive charts are working
 - File browser status: `*.metrics.ndjson` files are routed into the plugin view and sidebar labels are normalized to logical metric dataset names
-- UI status: compact timeline layout, per-file persisted view controls, title-bar chart/filter/sort actions, grouping, derived summary rows, row action menu, title-bar file actions, optional metric icons, and chart-to-timeline selection are implemented
-- Next implementation phase: cross-file navigation and file-level polish
+- UI status: compact timeline layout, per-file persisted view controls, title-bar chart/filter/sort actions, grouping, derived summary rows, row action menu, command-palette metrics search, optional metric icons, and chart-to-timeline selection are implemented
+- Next implementation phase: file-level polish and group-collapse behavior
 
 ## Product
 
@@ -163,6 +163,7 @@ Unknown keys, unknown units, and built-in key/unit mismatches are warnings, not 
 - Obsidian plugin shell
 - file-backed metrics view for `*.metrics.ndjson`
 - file browser integration for compound metrics extensions
+- command-palette metrics search across the configured root
 - current-file create, update, and delete flows for metrics rows
 - settings for metrics root, supported extensions, default write file, reference prefix, metric icons, and metric label display mode
 - built-in metric catalog for first-party metric metadata and validation hints
@@ -209,10 +210,11 @@ The display name omits "Obsidian" to stay aligned with common community plugin n
 - Validation, row labels, chart labels, and record modal suggestions now read from the built-in metric catalog
 - Lists and selectors can now switch between friendly metric names and canonical keys from settings
 - Record actions are available from a minimal `...` menu for copying stable `metric:<id>` references, plus copy, edit, and delete operations
-- Metrics files can now be created, renamed, and deleted from commands or the metrics view title bar
+- Metrics files can now be created, renamed, and deleted from commands
+- Metrics records can now be searched across files from a command-palette picker and open the matching row in the metrics view
 - The current file view can render interactive charts above the filter bar when it is shown, using the same visible rows as the timeline
 - Chart buckets can now focus the matching visible timeline rows below
-- The current phase is substantially complete; the next meaningful milestone is cross-file navigation and file-level polish
+- The current phase is substantially complete; the next meaningful milestone is file-level polish and group-collapse behavior
 
 ## Viewing plan
 
@@ -256,14 +258,14 @@ The display name omits "Obsidian" to stay aligned with common community plugin n
 
 ## Recommended next work
 
-1. Add cross-file record navigation.
-   Provide a search/open flow by `id`, `origin_id`, `key`, or source across the metrics root without introducing a hidden database.
-2. Refine file-level polish.
+1. Refine file-level polish.
    Add small confirmations, rename ergonomics, and smarter defaults around new-file placement if they prove necessary.
-3. Refine the filter/sort/group toolbar.
+2. Refine the filter/sort/group toolbar.
    Keep the controls minimal and local to the current view, but improve density and discoverability if needed.
-4. Consider chart-to-timeline depth.
+3. Consider chart-to-timeline depth.
    If needed, add stronger chart drill-down modes such as temporary bucket filters or chart-driven group focus without changing the file contract.
+4. Refine cross-file search only if needed.
+   Keep the current command-palette search lightweight unless a stronger navigation case appears.
 
 ## Open questions
 
