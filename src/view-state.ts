@@ -19,7 +19,7 @@ export type MetricsTimeRange =
 export interface MetricsViewState {
   fromDate: string;
   groupBy: MetricsGroupBy;
-  key: string;
+  keys: string[];
   searchText: string;
   showChart: boolean;
   showFilters: boolean;
@@ -39,7 +39,7 @@ export interface PersistedMetricsViewState {
 export const DEFAULT_VIEW_STATE: MetricsViewState = {
   fromDate: "",
   groupBy: "none",
-  key: "",
+  keys: [],
   searchText: "",
   showChart: false,
   showFilters: true,
@@ -53,11 +53,17 @@ export const DEFAULT_VIEW_STATE: MetricsViewState = {
 
 export const DEFAULT_PERSISTED_VIEW_STATE: PersistedMetricsViewState = {
   advancedControlsExpanded: false,
-  viewState: DEFAULT_VIEW_STATE,
+  viewState: {
+    ...DEFAULT_VIEW_STATE,
+    keys: [...DEFAULT_VIEW_STATE.keys],
+  },
 };
 
 export function createDefaultViewState(): MetricsViewState {
-  return { ...DEFAULT_VIEW_STATE };
+  return {
+    ...DEFAULT_VIEW_STATE,
+    keys: [...DEFAULT_VIEW_STATE.keys],
+  };
 }
 
 function normalizeSortOrder(value: unknown): MetricsSortOrder {
@@ -101,13 +107,39 @@ function normalizeString(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(
+      value
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0),
+    ),
+  );
+}
+
+function normalizeMetricKeys(value: unknown, legacyValue: unknown): string[] {
+  if (Array.isArray(value)) {
+    return normalizeStringArray(value);
+  }
+
+  const legacyKey = normalizeString(legacyValue).trim();
+  return legacyKey.length > 0 ? [legacyKey] : [];
+}
+
 export function normalizeMetricsViewState(
   value: Partial<MetricsViewState> | null | undefined,
 ): MetricsViewState {
+  const legacyValue = value as { key?: unknown } | null | undefined;
+
   return {
     fromDate: normalizeString(value?.fromDate),
     groupBy: normalizeGroupBy(value?.groupBy),
-    key: normalizeString(value?.key),
+    keys: normalizeMetricKeys(value?.keys, legacyValue?.key),
     searchText: normalizeString(value?.searchText),
     showChart: value?.showChart === true,
     showFilters: value?.showFilters !== false,

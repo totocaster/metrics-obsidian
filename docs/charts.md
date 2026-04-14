@@ -43,7 +43,7 @@ records -> filter/search/status/date -> sort -> group -> render
 
 - The chart never reads raw file rows independently of the timeline.
 - The chart must respect:
-  - metric filter
+  - multi-select metric filter
   - search text
   - source filter
   - validation status filter

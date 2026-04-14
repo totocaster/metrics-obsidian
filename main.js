@@ -984,7 +984,7 @@ var import_obsidian3 = require("obsidian");
 var DEFAULT_VIEW_STATE = {
   fromDate: "",
   groupBy: "none",
-  key: "",
+  keys: [],
   searchText: "",
   showChart: false,
   showFilters: true,
@@ -995,8 +995,18 @@ var DEFAULT_VIEW_STATE = {
   timeRange: "all",
   toDate: ""
 };
+var DEFAULT_PERSISTED_VIEW_STATE = {
+  advancedControlsExpanded: false,
+  viewState: {
+    ...DEFAULT_VIEW_STATE,
+    keys: [...DEFAULT_VIEW_STATE.keys]
+  }
+};
 function createDefaultViewState() {
-  return { ...DEFAULT_VIEW_STATE };
+  return {
+    ...DEFAULT_VIEW_STATE,
+    keys: [...DEFAULT_VIEW_STATE.keys]
+  };
 }
 function normalizeSortOrder(value) {
   return value === "oldest" || value === "value-desc" || value === "value-asc" ? value : "newest";
@@ -1016,11 +1026,29 @@ function normalizeTimeRange(value) {
 function normalizeString(value) {
   return typeof value === "string" ? value : "";
 }
+function normalizeStringArray(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return Array.from(
+    new Set(
+      value.filter((item) => typeof item === "string").map((item) => item.trim()).filter((item) => item.length > 0)
+    )
+  );
+}
+function normalizeMetricKeys(value, legacyValue) {
+  if (Array.isArray(value)) {
+    return normalizeStringArray(value);
+  }
+  const legacyKey = normalizeString(legacyValue).trim();
+  return legacyKey.length > 0 ? [legacyKey] : [];
+}
 function normalizeMetricsViewState(value) {
+  const legacyValue = value;
   return {
     fromDate: normalizeString(value?.fromDate),
     groupBy: normalizeGroupBy(value?.groupBy),
-    key: normalizeString(value?.key),
+    keys: normalizeMetricKeys(value?.keys, legacyValue?.key),
     searchText: normalizeString(value?.searchText),
     showChart: value?.showChart === true,
     showFilters: value?.showFilters !== false,
@@ -1134,7 +1162,7 @@ var MetricsSettingTab = class extends import_obsidian3.PluginSettingTab {
         this.plugin.refreshOpenMetricsViews();
       });
     });
-    new import_obsidian3.Setting(containerEl).setName("Metric label display").setDesc("Choose whether lists and dropdowns show friendly metric names or canonical keys.").addDropdown((dropdown) => {
+    new import_obsidian3.Setting(containerEl).setName("Metric label display").setDesc("Choose whether lists and selectors show friendly metric names or canonical keys.").addDropdown((dropdown) => {
       dropdown.addOption("friendly", "Friendly names").addOption("key", "Canonical keys").setValue(this.plugin.settings.metricNameDisplayMode).onChange(async (value) => {
         this.plugin.settings.metricNameDisplayMode = value === "key" ? "key" : "friendly";
         await this.plugin.saveSettings();
@@ -3158,14 +3186,52 @@ function withSelectedFilterValue(options, selected) {
   }
   return [selected, ...options];
 }
+function withSelectedFilterValues(options, selected) {
+  if (selected.length === 0) {
+    return options;
+  }
+  const missingSelected = selected.filter((value) => value.length > 0 && !options.includes(value));
+  if (missingSelected.length === 0) {
+    return options;
+  }
+  return [...missingSelected, ...options];
+}
+function toggleSelectedFilterValue(selected, value) {
+  return selected.includes(value) ? selected.filter((item) => item !== value) : [...selected, value];
+}
+function metricFilterLabel(selectedKeys, metricNameDisplayMode) {
+  if (selectedKeys.length === 0) {
+    return "All metrics";
+  }
+  if (selectedKeys.length === 1) {
+    return displayMetricOption(selectedKeys[0], metricNameDisplayMode);
+  }
+  return `${selectedKeys.length} metrics`;
+}
+function metricFilterTitle(selectedKeys, metricNameDisplayMode) {
+  if (selectedKeys.length === 0) {
+    return "All metrics";
+  }
+  return selectedKeys.map((key) => displayMetricOption(key, metricNameDisplayMode)).join(", ");
+}
+function metricFilterAriaLabel(selectedKeys, metricNameDisplayMode) {
+  if (selectedKeys.length === 0) {
+    return "Filter by metric. All metrics visible.";
+  }
+  if (selectedKeys.length === 1) {
+    return `Filter by metric. ${displayMetricOption(selectedKeys[0], metricNameDisplayMode)} selected.`;
+  }
+  return `Filter by metric. ${selectedKeys.length} metrics selected.`;
+}
 function uniqueLineNumbers2(lineNumbers) {
   return Array.from(new Set(lineNumbers));
 }
 function applyMetricsViewState(rows, viewState) {
   const normalizedSearch = viewState.searchText.trim().toLowerCase();
   const { fromDate, toDate } = resolvedTimeRange(viewState);
+  const selectedKeys = new Set(viewState.keys);
   const filteredRows = rows.filter((row) => {
-    if (viewState.key && row.metric?.key !== viewState.key) {
+    if (selectedKeys.size > 0 && !selectedKeys.has(row.metric?.key ?? "")) {
       return false;
     }
     if (viewState.source && row.metric?.source !== viewState.source) {
@@ -3279,7 +3345,7 @@ function filterBarControlCount(viewState) {
   if (hasActiveTimeRange(viewState)) {
     count += 1;
   }
-  if (viewState.key.length > 0) {
+  if (viewState.keys.length > 0) {
     count += 1;
   }
   if (viewState.searchText.trim().length > 0) {
@@ -4030,9 +4096,9 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
       this.viewStateFilePath = currentFile.path;
     }
     const analysis = analyzeMetricsData(this.data ?? "");
-    const availableKeys = withSelectedFilterValue(
+    const availableKeys = withSelectedFilterValues(
       collectFilterValues(analysis.rows, "key", this.plugin.settings.metricNameDisplayMode),
-      this.viewState.key
+      this.viewState.keys
     );
     const availableSources = withSelectedFilterValue(
       collectFilterValues(analysis.rows, "source", this.plugin.settings.metricNameDisplayMode),
@@ -4226,28 +4292,29 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
         this.render();
       });
     }
-    const keySelect = primaryControls.createEl("select", { cls: "metrics-lens-control" });
-    keySelect.dataset.metricsControl = "key";
-    keySelect.setAttribute("aria-label", "Filter by metric");
-    keySelect.createEl("option", {
-      text: "All metrics",
-      value: ""
+    const keyFilterButton = primaryControls.createEl("button", {
+      cls: ["metrics-lens-control", "metrics-lens-select-button"]
     });
-    availableKeys.forEach((key) => {
-      const optionText = displayMetricOption(key, this.plugin.settings.metricNameDisplayMode);
-      const option = keySelect.createEl("option", {
-        text: optionText,
-        value: key
-      });
-      const alternateLabel = alternateMetricLabel(key, this.plugin.settings.metricNameDisplayMode);
-      option.title = alternateLabel ?? optionText;
+    keyFilterButton.type = "button";
+    keyFilterButton.dataset.metricsControl = "keys";
+    keyFilterButton.setAttribute("aria-haspopup", "menu");
+    keyFilterButton.setAttribute(
+      "aria-label",
+      metricFilterAriaLabel(this.viewState.keys, this.plugin.settings.metricNameDisplayMode)
+    );
+    keyFilterButton.setAttribute(
+      "title",
+      metricFilterTitle(this.viewState.keys, this.plugin.settings.metricNameDisplayMode)
+    );
+    keyFilterButton.createSpan({
+      cls: "metrics-lens-select-button-label",
+      text: metricFilterLabel(this.viewState.keys, this.plugin.settings.metricNameDisplayMode)
     });
-    keySelect.value = this.viewState.key;
-    keySelect.addEventListener("change", () => {
-      this.pendingControlFocus = { name: "key" };
-      this.viewState.key = keySelect.value;
-      this.persistCurrentViewState();
-      this.render();
+    const keyFilterIcon = keyFilterButton.createSpan({ cls: "metrics-lens-select-button-icon" });
+    (0, import_obsidian5.setIcon)(keyFilterIcon, "chevron-down");
+    keyFilterButton.addEventListener("click", () => {
+      this.pendingControlFocus = { name: "keys" };
+      this.openMetricFilterMenu(keyFilterButton, availableKeys);
     });
     const searchInput = primaryControls.createEl("input", {
       cls: "metrics-lens-control metrics-lens-search",
@@ -4394,6 +4461,48 @@ var MetricsFileView = class extends import_obsidian5.TextFileView {
       changed = true;
     }
     return changed;
+  }
+  openMetricFilterMenu(anchorEl, availableKeys) {
+    const menu = new import_obsidian5.Menu();
+    const metricNameDisplayMode = this.plugin.settings.metricNameDisplayMode;
+    menu.addItem((item) => {
+      item.setTitle("All metrics").setChecked(this.viewState.keys.length === 0).onClick(() => {
+        if (this.viewState.keys.length === 0) {
+          return;
+        }
+        this.pendingControlFocus = { name: "keys" };
+        this.viewState.keys = [];
+        this.persistCurrentViewState();
+        this.render();
+      });
+    });
+    if (availableKeys.length > 0) {
+      menu.addSeparator();
+    }
+    availableKeys.forEach((key) => {
+      menu.addItem((item) => {
+        item.setTitle(displayMetricOption(key, metricNameDisplayMode)).setChecked(this.viewState.keys.includes(key)).onClick(() => {
+          this.pendingControlFocus = { name: "keys" };
+          this.viewState.keys = toggleSelectedFilterValue(this.viewState.keys, key);
+          this.persistCurrentViewState();
+          this.render();
+        });
+      });
+    });
+    if (anchorEl) {
+      const rect = anchorEl.getBoundingClientRect();
+      menu.showAtPosition({
+        overlap: true,
+        width: rect.width,
+        x: rect.left,
+        y: rect.bottom
+      });
+      return;
+    }
+    menu.showAtPosition({
+      x: window.innerWidth / 2,
+      y: 80
+    });
   }
   sortOrderLabel(sortOrder) {
     switch (sortOrder) {

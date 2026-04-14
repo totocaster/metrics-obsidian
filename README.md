@@ -13,7 +13,7 @@ Metrics is a file-first Obsidian plugin for working with `*.metrics.ndjson` data
 - Supports metrics file create, rename, and delete
 - Renders records as a compact timeline with optional metric icons
 - Uses a catalog-backed registry for supported metric labels, units, icons, and formatting
-- Lets lists and dropdowns show either friendly metric names or canonical keys
+- Lets lists and selectors show either friendly metric names or canonical keys
 - Persists per-file filters, filter-bar visibility, sorting, grouping, and chart visibility
 - Adds interactive charts above the timeline using the same visible rows as the list
 - Adds optional derived summary rows for average, median, minimum, maximum, sum, and count
@@ -84,7 +84,7 @@ Unknown keys are still allowed by the file contract, but they are treated as out
 
 - time presets including today, this week, past 7 days, past 30 days, past 3 months, past 6 months, past 1 year, this month, and custom range
 - title-bar toggle to show or hide the filter bar
-- metric filter
+- multi-select metric filter
 - search
 - title-bar sort control
 - grouping by day, metric, and source

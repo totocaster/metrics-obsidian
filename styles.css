@@ -42,6 +42,43 @@
   max-width: 100%;
 }
 
+.metrics-lens-select-button {
+  align-items: center;
+  background-color: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--input-radius, var(--radius-s));
+  color: var(--text-normal);
+  display: inline-flex;
+  gap: var(--size-2-2);
+  justify-content: space-between;
+  min-height: var(--input-height);
+  min-width: 11rem;
+  padding: 0 var(--size-4-2);
+}
+
+.metrics-lens-select-button:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.metrics-lens-select-button:focus-visible {
+  outline: 2px solid var(--background-modifier-border-focus);
+  outline-offset: 1px;
+}
+
+.metrics-lens-select-button-label {
+  min-width: 0;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metrics-lens-select-button-icon {
+  color: var(--text-muted);
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
 .metrics-lens-search {
   flex: 1 1 16rem;
   min-width: 8rem;

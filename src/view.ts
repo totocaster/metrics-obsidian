@@ -272,6 +272,68 @@ function withSelectedFilterValue(options: string[], selected: string): string[] 
   return [selected, ...options];
 }
 
+function withSelectedFilterValues(options: string[], selected: string[]): string[] {
+  if (selected.length === 0) {
+    return options;
+  }
+
+  const missingSelected = selected.filter((value) => value.length > 0 && !options.includes(value));
+  if (missingSelected.length === 0) {
+    return options;
+  }
+
+  return [...missingSelected, ...options];
+}
+
+function toggleSelectedFilterValue(selected: string[], value: string): string[] {
+  return selected.includes(value)
+    ? selected.filter((item) => item !== value)
+    : [...selected, value];
+}
+
+function metricFilterLabel(
+  selectedKeys: string[],
+  metricNameDisplayMode: MetricNameDisplayMode,
+): string {
+  if (selectedKeys.length === 0) {
+    return "All metrics";
+  }
+
+  if (selectedKeys.length === 1) {
+    return displayMetricOption(selectedKeys[0], metricNameDisplayMode);
+  }
+
+  return `${selectedKeys.length} metrics`;
+}
+
+function metricFilterTitle(
+  selectedKeys: string[],
+  metricNameDisplayMode: MetricNameDisplayMode,
+): string {
+  if (selectedKeys.length === 0) {
+    return "All metrics";
+  }
+
+  return selectedKeys
+    .map((key) => displayMetricOption(key, metricNameDisplayMode))
+    .join(", ");
+}
+
+function metricFilterAriaLabel(
+  selectedKeys: string[],
+  metricNameDisplayMode: MetricNameDisplayMode,
+): string {
+  if (selectedKeys.length === 0) {
+    return "Filter by metric. All metrics visible.";
+  }
+
+  if (selectedKeys.length === 1) {
+    return `Filter by metric. ${displayMetricOption(selectedKeys[0], metricNameDisplayMode)} selected.`;
+  }
+
+  return `Filter by metric. ${selectedKeys.length} metrics selected.`;
+}
+
 function uniqueLineNumbers(lineNumbers: number[]): number[] {
   return Array.from(new Set(lineNumbers));
 }
@@ -282,9 +344,10 @@ function applyMetricsViewState(
 ): ParsedMetricRow[] {
   const normalizedSearch = viewState.searchText.trim().toLowerCase();
   const { fromDate, toDate } = resolvedTimeRange(viewState);
+  const selectedKeys = new Set(viewState.keys);
 
   const filteredRows = rows.filter((row) => {
-    if (viewState.key && row.metric?.key !== viewState.key) {
+    if (selectedKeys.size > 0 && !selectedKeys.has(row.metric?.key ?? "")) {
       return false;
     }
 
@@ -423,7 +486,7 @@ function filterBarControlCount(viewState: MetricsViewState): number {
     count += 1;
   }
 
-  if (viewState.key.length > 0) {
+  if (viewState.keys.length > 0) {
     count += 1;
   }
 
@@ -1437,9 +1500,9 @@ export class MetricsFileView extends TextFileView {
     }
 
     const analysis = analyzeMetricsData(this.data ?? "");
-    const availableKeys = withSelectedFilterValue(
+    const availableKeys = withSelectedFilterValues(
       collectFilterValues(analysis.rows, "key", this.plugin.settings.metricNameDisplayMode),
-      this.viewState.key,
+      this.viewState.keys,
     );
     const availableSources = withSelectedFilterValue(
       collectFilterValues(analysis.rows, "source", this.plugin.settings.metricNameDisplayMode),
@@ -1656,28 +1719,29 @@ export class MetricsFileView extends TextFileView {
       });
     }
 
-    const keySelect = primaryControls.createEl("select", { cls: "metrics-lens-control" });
-    keySelect.dataset.metricsControl = "key";
-    keySelect.setAttribute("aria-label", "Filter by metric");
-    keySelect.createEl("option", {
-      text: "All metrics",
-      value: "",
+    const keyFilterButton = primaryControls.createEl("button", {
+      cls: ["metrics-lens-control", "metrics-lens-select-button"],
     });
-    availableKeys.forEach((key) => {
-      const optionText = displayMetricOption(key, this.plugin.settings.metricNameDisplayMode);
-      const option = keySelect.createEl("option", {
-        text: optionText,
-        value: key,
-      });
-      const alternateLabel = alternateMetricLabel(key, this.plugin.settings.metricNameDisplayMode);
-      option.title = alternateLabel ?? optionText;
+    keyFilterButton.type = "button";
+    keyFilterButton.dataset.metricsControl = "keys";
+    keyFilterButton.setAttribute("aria-haspopup", "menu");
+    keyFilterButton.setAttribute(
+      "aria-label",
+      metricFilterAriaLabel(this.viewState.keys, this.plugin.settings.metricNameDisplayMode),
+    );
+    keyFilterButton.setAttribute(
+      "title",
+      metricFilterTitle(this.viewState.keys, this.plugin.settings.metricNameDisplayMode),
+    );
+    keyFilterButton.createSpan({
+      cls: "metrics-lens-select-button-label",
+      text: metricFilterLabel(this.viewState.keys, this.plugin.settings.metricNameDisplayMode),
     });
-    keySelect.value = this.viewState.key;
-    keySelect.addEventListener("change", () => {
-      this.pendingControlFocus = { name: "key" };
-      this.viewState.key = keySelect.value;
-      this.persistCurrentViewState();
-      this.render();
+    const keyFilterIcon = keyFilterButton.createSpan({ cls: "metrics-lens-select-button-icon" });
+    setIcon(keyFilterIcon, "chevron-down");
+    keyFilterButton.addEventListener("click", () => {
+      this.pendingControlFocus = { name: "keys" };
+      this.openMetricFilterMenu(keyFilterButton, availableKeys);
     });
 
     const searchInput = primaryControls.createEl("input", {
@@ -1845,6 +1909,61 @@ export class MetricsFileView extends TextFileView {
     }
 
     return changed;
+  }
+
+  private openMetricFilterMenu(anchorEl: HTMLElement | null, availableKeys: string[]): void {
+    const menu = new Menu();
+    const metricNameDisplayMode = this.plugin.settings.metricNameDisplayMode;
+
+    menu.addItem((item) => {
+      item
+        .setTitle("All metrics")
+        .setChecked(this.viewState.keys.length === 0)
+        .onClick(() => {
+          if (this.viewState.keys.length === 0) {
+            return;
+          }
+
+          this.pendingControlFocus = { name: "keys" };
+          this.viewState.keys = [];
+          this.persistCurrentViewState();
+          this.render();
+        });
+    });
+
+    if (availableKeys.length > 0) {
+      menu.addSeparator();
+    }
+
+    availableKeys.forEach((key) => {
+      menu.addItem((item) => {
+        item
+          .setTitle(displayMetricOption(key, metricNameDisplayMode))
+          .setChecked(this.viewState.keys.includes(key))
+          .onClick(() => {
+            this.pendingControlFocus = { name: "keys" };
+            this.viewState.keys = toggleSelectedFilterValue(this.viewState.keys, key);
+            this.persistCurrentViewState();
+            this.render();
+          });
+      });
+    });
+
+    if (anchorEl) {
+      const rect = anchorEl.getBoundingClientRect();
+      menu.showAtPosition({
+        overlap: true,
+        width: rect.width,
+        x: rect.left,
+        y: rect.bottom,
+      });
+      return;
+    }
+
+    menu.showAtPosition({
+      x: window.innerWidth / 2,
+      y: 80,
+    });
   }
 
   private sortOrderLabel(sortOrder: MetricsSortOrder): string {

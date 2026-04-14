@@ -155,7 +155,7 @@ export class MetricsSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Metric label display")
-      .setDesc("Choose whether lists and dropdowns show friendly metric names or canonical keys.")
+      .setDesc("Choose whether lists and selectors show friendly metric names or canonical keys.")
       .addDropdown((dropdown) => {
         dropdown
           .addOption("friendly", "Friendly names")

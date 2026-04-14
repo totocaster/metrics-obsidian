@@ -197,9 +197,9 @@ The display name omits "Obsidian" to stay aligned with common community plugin n
 - The plugin can now append, edit, and delete records in the current metrics file once rows have stable ids
 - The current file view is rendered as a compact timeline with minimal default Obsidian styling
 - Records are sorted newest-first by default using `ts`
-- The current file view supports local filters for key, source, status, text, and date range
+- The current file view supports local filters for one or more metric keys, source, status, text, and date range
 - Filter-bar visibility, filter, search, sort, time range, and grouping state persist per metrics file until the user clicks `Reset`
-- The filter bar keeps time range, metrics, and search visible, with advanced filters under `More`, while sort now lives in the title bar next to the chart and filter toggles
+- The filter bar keeps time range, metrics, and search visible, with the metric picker supporting multi-select, advanced filters under `More`, and sort in the title bar next to the chart and filter toggles
 - The current file view supports preset time ranges including today, this week, past 7 days, past 30 days, past 3 months, past 6 months, past 1 year, this month, and custom range
 - The current file view supports sort modes for newest-first, oldest-first, and value ordering
 - The current file view can group records by day, metric, or source
@@ -207,7 +207,7 @@ The display name omits "Obsidian" to stay aligned with common community plugin n
 - Day groups render as linked `h2` headings titled `YYYY-MM-DD` and open the matching daily note
 - Metric icons can be shown in timeline markers and are enabled by default when the icon exists in Obsidian
 - Validation, row labels, chart labels, and record modal suggestions now read from the built-in metric catalog
-- Lists and dropdowns can now switch between friendly metric names and canonical keys from settings
+- Lists and selectors can now switch between friendly metric names and canonical keys from settings
 - Record actions are available from a minimal `...` menu for copying stable `metric:<id>` references, plus copy, edit, and delete operations
 - Metrics files can now be created, renamed, and deleted from commands or the metrics view title bar
 - The current file view can render interactive charts above the filter bar when it is shown, using the same visible rows as the timeline
@@ -219,7 +219,7 @@ The display name omits "Obsidian" to stay aligned with common community plugin n
 ### Filtering
 
 1. Implemented.
-   The current file view now supports metric, source, validation status, free-text search, and time-based filtering.
+   The current file view now supports multi-select metric filtering, source, validation status, free-text search, and time-based filtering.
 2. Keep filters local to the open view.
    Filters change presentation only and do not mutate files, and the current selection persists until reset.
 3. Future follow-up.
