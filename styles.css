@@ -519,6 +519,15 @@
   color: var(--text-muted);
 }
 
+.metrics-lens-record.is-summary {
+  align-items: center;
+}
+
+.metrics-lens-record.is-summary .metrics-lens-record-body {
+  --metrics-lens-marker-top: calc(50% - (var(--metrics-lens-marker-size) / 2));
+  --metrics-lens-marker-bottom: calc(var(--metrics-lens-marker-top) + var(--metrics-lens-marker-size));
+}
+
 .metrics-lens-record-marker.has-icon svg {
   display: block;
   width: 0.7em;
@@ -530,6 +539,10 @@
   flex-wrap: wrap;
   align-items: baseline;
   gap: var(--size-4-2);
+}
+
+.metrics-lens-record.is-summary .metrics-lens-record-main {
+  align-items: center;
 }
 
 .metrics-lens-record-key {

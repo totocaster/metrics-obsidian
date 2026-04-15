@@ -961,6 +961,11 @@ function renderRecord(
   if (options.isLast) {
     rowEl.addClass("is-last");
   }
+  rowEl.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openRecordMenu(event, row, plugin, file, referencePrefix);
+  });
 
   const timeEl = rowEl.createDiv({ cls: "metrics-lens-record-time" });
   timeEl.createSpan({
