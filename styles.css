@@ -376,6 +376,98 @@
   min-height: 44px;
 }
 
+.metrics-lens-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--size-4-2);
+}
+
+.metrics-lens-record-modal-dialog {
+  width: min(960px, calc(100vw - var(--size-4-8)));
+  max-width: calc(100vw - var(--size-4-8));
+}
+
+.metrics-lens-record-modal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-4);
+}
+
+.metrics-lens-record-modal > h2 {
+  margin-bottom: 0;
+}
+
+.metrics-lens-record-modal-status {
+  min-height: 1.25em;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  line-height: var(--line-height-tight);
+}
+
+.metrics-lens-record-modal-status.is-error {
+  color: var(--text-error);
+}
+
+.metrics-lens-record-modal-section-title {
+  margin: 0;
+  padding-top: var(--size-4-3);
+  border-top: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-medium);
+  line-height: var(--line-height-tight);
+}
+
+.metrics-lens-record-modal-section-title.is-first {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.metrics-lens-record-modal-grid,
+.metrics-lens-record-modal-optional {
+  display: grid;
+  gap: var(--size-4-2) var(--size-4-3);
+}
+
+.metrics-lens-record-modal-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.metrics-lens-record-modal-optional {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.metrics-lens-record-modal-setting.setting-item {
+  margin-bottom: 0;
+}
+
+.metrics-lens-record-modal-setting .setting-item-control {
+  align-items: flex-start;
+}
+
+.metrics-lens-record-modal-setting .setting-item-control :is(input, textarea) {
+  width: 100%;
+}
+
+.metrics-lens-record-modal-setting textarea {
+  resize: vertical;
+}
+
+.metrics-lens-record-modal-setting .setting-item-name {
+  margin-bottom: var(--size-2-1);
+}
+
+.metrics-lens-record-modal-setting.is-invalid .setting-item-control :is(input, textarea) {
+  border-color: var(--text-error);
+}
+
+@media (max-width: 640px) {
+  .metrics-lens-record-modal-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .metrics-lens-validation,
 .metrics-lens-issues {
   margin: 0;
