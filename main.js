@@ -1717,6 +1717,115 @@ var MetricsSearchModal = class extends import_obsidian4.FuzzySuggestModal {
 // src/settings.ts
 var import_obsidian5 = require("obsidian");
 
+// src/time-boundaries.ts
+var DEFAULT_TIME_BOUNDARY_CONFIG = {
+  dayStartHour: 0,
+  weekStartsOn: 1
+};
+function normalizeDayStartHour(value) {
+  if (typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 23) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isInteger(parsed) && parsed >= 0 && parsed <= 23) {
+      return parsed;
+    }
+  }
+  return DEFAULT_TIME_BOUNDARY_CONFIG.dayStartHour;
+}
+function normalizeWeekStartsOn(value) {
+  if (typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 6) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isInteger(parsed) && parsed >= 0 && parsed <= 6) {
+      return parsed;
+    }
+  }
+  return DEFAULT_TIME_BOUNDARY_CONFIG.weekStartsOn;
+}
+function toLocalDateString(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+function parseLocalDateString(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) {
+    return null;
+  }
+  const year = Number.parseInt(match[1], 10);
+  const month = Number.parseInt(match[2], 10);
+  const day = Number.parseInt(match[3], 10);
+  const parsed = new Date(year, month - 1, day);
+  parsed.setHours(0, 0, 0, 0);
+  if (parsed.getFullYear() !== year || parsed.getMonth() !== month - 1 || parsed.getDate() !== day) {
+    return null;
+  }
+  return parsed;
+}
+function addDays(date, days) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+function addMonths(date, months) {
+  const next = new Date(date);
+  const originalDay = next.getDate();
+  next.setDate(1);
+  next.setMonth(next.getMonth() + months);
+  const lastDayOfMonth = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+  next.setDate(Math.min(originalDay, lastDayOfMonth));
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+function addYears(date, years) {
+  return addMonths(date, years * 12);
+}
+function startOfMonth(date) {
+  const next = new Date(date);
+  next.setDate(1);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+function startOfWeek(date, weekStartsOn) {
+  const next = new Date(date);
+  const offset = (next.getDay() - weekStartsOn + 7) % 7;
+  next.setDate(next.getDate() - offset);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+function startOfYear(date) {
+  const next = new Date(date);
+  next.setMonth(0, 1);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+function effectiveDateFromDate(date, config) {
+  const shifted = new Date(date);
+  shifted.setHours(shifted.getHours() - config.dayStartHour);
+  shifted.setHours(0, 0, 0, 0);
+  return shifted;
+}
+function effectiveDateStringFromTimestamp(timestamp, config) {
+  return toLocalDateString(effectiveDateFromDate(new Date(timestamp), config));
+}
+function currentEffectiveDate(config) {
+  return effectiveDateFromDate(/* @__PURE__ */ new Date(), config);
+}
+function boundaryStartForDate(date, config) {
+  const boundary = new Date(date);
+  boundary.setHours(config.dayStartHour, 0, 0, 0);
+  return boundary;
+}
+function boundaryStartTimestampForDate(date, config) {
+  return boundaryStartForDate(date, config).getTime();
+}
+
 // src/view-state.ts
 var DEFAULT_VIEW_STATE = {
   fromDate: "",
@@ -1749,7 +1858,7 @@ function normalizeSortOrder(value) {
   return value === "oldest" || value === "value-desc" || value === "value-asc" ? value : "newest";
 }
 function normalizeGroupBy(value) {
-  return value === "day" || value === "key" || value === "source" ? value : "none";
+  return value === "day" || value === "week" || value === "month" || value === "year" || value === "key" || value === "source" ? value : "none";
 }
 function normalizeStatus(value) {
   return value === "valid" || value === "warning" || value === "error" ? value : "all";
@@ -1806,13 +1915,15 @@ function normalizePersistedMetricsViewState(value) {
 
 // src/settings.ts
 var DEFAULT_SETTINGS = {
+  dayStartHour: DEFAULT_TIME_BOUNDARY_CONFIG.dayStartHour,
   defaultWriteFile: "Metrics/All.metrics.ndjson",
   metricNameDisplayMode: "friendly",
   metricsRoot: "Metrics",
   persistedViewStateByPath: {},
   recordReferencePrefix: "metric:",
   showMetricIcons: true,
-  supportedExtensions: [".metrics.ndjson"]
+  supportedExtensions: [".metrics.ndjson"],
+  weekStartsOn: DEFAULT_TIME_BOUNDARY_CONFIG.weekStartsOn
 };
 function normalizeMetricsSettings(settings) {
   const supportedExtensions = settings.supportedExtensions?.length ? settings.supportedExtensions : DEFAULT_SETTINGS.supportedExtensions;
@@ -1823,6 +1934,7 @@ function normalizeMetricsSettings(settings) {
     ])
   );
   return {
+    dayStartHour: normalizeDayStartHour(settings.dayStartHour),
     defaultWriteFile: (0, import_obsidian5.normalizePath)(settings.defaultWriteFile ?? DEFAULT_SETTINGS.defaultWriteFile),
     metricNameDisplayMode: settings.metricNameDisplayMode === "key" ? "key" : DEFAULT_SETTINGS.metricNameDisplayMode,
     metricsRoot: (0, import_obsidian5.normalizePath)(settings.metricsRoot ?? DEFAULT_SETTINGS.metricsRoot),
@@ -1833,7 +1945,8 @@ function normalizeMetricsSettings(settings) {
       new Set(
         supportedExtensions.map((value) => value.trim()).filter((value) => value.length > 0)
       )
-    )
+    ),
+    weekStartsOn: normalizeWeekStartsOn(settings.weekStartsOn)
   };
 }
 function formatExtensions(extensions) {
@@ -1842,6 +1955,21 @@ function formatExtensions(extensions) {
 function parseExtensions(value) {
   return value.split(",").map((item) => item.trim()).filter((item) => item.length > 0);
 }
+function hourLabel(hour) {
+  return new Intl.DateTimeFormat(void 0, {
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(new Date(2e3, 0, 1, hour));
+}
+var WEEKDAY_OPTIONS = [
+  { label: "Sunday", value: 0 },
+  { label: "Monday", value: 1 },
+  { label: "Tuesday", value: 2 },
+  { label: "Wednesday", value: 3 },
+  { label: "Thursday", value: 4 },
+  { label: "Friday", value: 5 },
+  { label: "Saturday", value: 6 }
+];
 var MetricsSettingTab = class extends import_obsidian5.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
@@ -1892,6 +2020,31 @@ var MetricsSettingTab = class extends import_obsidian5.PluginSettingTab {
         this.plugin.refreshOpenMetricsViews();
       });
     });
+    new import_obsidian5.Setting(containerEl).setName("Time boundaries").setHeading();
+    new import_obsidian5.Setting(containerEl).setName("Week starts on").setDesc("Controls week grouping and the \u201Cthis week\u201D range.").addDropdown((dropdown) => {
+      WEEKDAY_OPTIONS.forEach((option) => {
+        dropdown.addOption(String(option.value), option.label);
+      });
+      dropdown.setValue(String(this.plugin.settings.weekStartsOn));
+      dropdown.onChange(async (value) => {
+        this.plugin.settings.weekStartsOn = normalizeWeekStartsOn(value);
+        await this.plugin.saveSettings();
+        this.plugin.refreshOpenMetricsViews();
+      });
+    });
+    new import_obsidian5.Setting(containerEl).setName("Day starts at").setDesc(
+      "Rows without an explicit date roll over to the next day at this local time for grouping and time ranges."
+    ).addDropdown((dropdown) => {
+      Array.from({ length: 24 }, (_, hour) => hour).forEach((hour) => {
+        dropdown.addOption(String(hour), hourLabel(hour));
+      });
+      dropdown.setValue(String(this.plugin.settings.dayStartHour));
+      dropdown.onChange(async (value) => {
+        this.plugin.settings.dayStartHour = normalizeDayStartHour(value);
+        await this.plugin.saveSettings();
+        this.plugin.refreshOpenMetricsViews();
+      });
+    });
     new import_obsidian5.Setting(containerEl).setName("Appearance").setHeading();
     new import_obsidian5.Setting(containerEl).setName("Show metric icons").setDesc("Show mapped Lucide icons next to metrics when the icon exists in Obsidian.").addToggle((toggle) => {
       toggle.setValue(this.plugin.settings.showMetricIcons);
@@ -1915,6 +2068,30 @@ var MetricsSettingTab = class extends import_obsidian5.PluginSettingTab {
 var import_obsidian7 = require("obsidian");
 
 // src/metrics-row-selectors.ts
+function rowExplicitDateValue(row) {
+  if (typeof row.metric?.date !== "string") {
+    return null;
+  }
+  return parseLocalDateString(row.metric.date) ? row.metric.date : null;
+}
+function formatMonthLabel(date) {
+  return new Intl.DateTimeFormat(void 0, {
+    month: "short",
+    year: "numeric"
+  }).format(date);
+}
+function formatMonthHeading(date) {
+  return new Intl.DateTimeFormat(void 0, {
+    month: "long",
+    year: "numeric"
+  }).format(date);
+}
+function formatWeekLabel(date) {
+  return new Intl.DateTimeFormat(void 0, {
+    day: "numeric",
+    month: "short"
+  }).format(date);
+}
 function rowTimestamp(row) {
   const ts = row.metric?.ts;
   if (typeof ts !== "string") {
@@ -1923,30 +2100,76 @@ function rowTimestamp(row) {
   const parsed = Date.parse(ts);
   return Number.isNaN(parsed) ? null : parsed;
 }
-function rowDateValue(row) {
-  if (typeof row.metric?.date === "string" && row.metric.date.length === 10) {
-    return row.metric.date;
+function rowDateValue(row, config = DEFAULT_TIME_BOUNDARY_CONFIG) {
+  const explicitDate = rowExplicitDateValue(row);
+  if (explicitDate) {
+    return explicitDate;
   }
-  const ts = row.metric?.ts;
-  if (typeof ts !== "string" || ts.length < 10) {
+  const timestamp = rowTimestamp(row);
+  if (timestamp === null) {
     return null;
   }
-  const parsed = Date.parse(ts);
-  if (Number.isNaN(parsed)) {
+  return effectiveDateStringFromTimestamp(timestamp, config);
+}
+function rowTemporalBucket(row, grouping, config = DEFAULT_TIME_BOUNDARY_CONFIG) {
+  const dayValue = rowDateValue(row, config);
+  if (!dayValue) {
     return null;
   }
-  return ts.slice(0, 10);
+  const dayDate = parseLocalDateString(dayValue);
+  if (!dayDate) {
+    return null;
+  }
+  switch (grouping) {
+    case "day":
+      return {
+        heading: dayValue,
+        key: dayValue,
+        label: dayValue,
+        linkTarget: dayValue,
+        startTimestamp: boundaryStartTimestampForDate(dayDate, config)
+      };
+    case "week": {
+      const weekStart = startOfWeek(dayDate, config.weekStartsOn);
+      const weekEnd = addDays(weekStart, 6);
+      const weekStartValue = toLocalDateString(weekStart);
+      const weekEndValue = toLocalDateString(weekEnd);
+      return {
+        heading: `${weekStartValue} to ${weekEndValue}`,
+        headingParts: [
+          { text: weekStartValue, linkTarget: weekStartValue },
+          { text: " to " },
+          { text: weekEndValue, linkTarget: weekEndValue }
+        ],
+        key: weekStartValue,
+        label: formatWeekLabel(weekStart),
+        startTimestamp: boundaryStartTimestampForDate(weekStart, config)
+      };
+    }
+    case "month": {
+      const monthStart = startOfMonth(dayDate);
+      return {
+        heading: formatMonthHeading(monthStart),
+        key: toLocalDateString(monthStart).slice(0, 7),
+        label: formatMonthLabel(monthStart),
+        startTimestamp: boundaryStartTimestampForDate(monthStart, config)
+      };
+    }
+    case "year": {
+      const yearStart = startOfYear(dayDate);
+      const yearLabel = String(yearStart.getFullYear());
+      return {
+        heading: yearLabel,
+        key: yearLabel,
+        label: yearLabel,
+        startTimestamp: boundaryStartTimestampForDate(yearStart, config)
+      };
+    }
+  }
 }
 
 // src/chart-model.ts
 var NO_UNIT_KEY = "__no_unit__";
-function startOfDayTimestamp(day) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) {
-    return null;
-  }
-  const timestamp = Date.parse(`${day}T00:00:00Z`);
-  return Number.isNaN(timestamp) ? null : timestamp;
-}
 function uniqueStrings(values) {
   return Array.from(new Set(values));
 }
@@ -2071,13 +2294,13 @@ function collectStackedValueRange(stackSegments) {
     maxValue: maxValue + padding
   };
 }
-function buildDailyPanel(rows, unitKey, unitLabel) {
+function buildTemporalGroupPanel(rows, unitKey, unitLabel, grouping, config) {
   const valuePrecision = preferredPrecisionForRows(rows);
   const seriesOrder = uniqueStrings(
     rows.map((row) => row.metric?.key).filter((value) => typeof value === "string" && value.length > 0)
   );
+  const bucketsByKey = /* @__PURE__ */ new Map();
   const bucketLineNumbers = /* @__PURE__ */ new Map();
-  const bucketTimestamps = /* @__PURE__ */ new Map();
   const stackSegments = /* @__PURE__ */ new Map();
   rows.forEach((row) => {
     const key = row.metric?.key;
@@ -2085,36 +2308,36 @@ function buildDailyPanel(rows, unitKey, unitLabel) {
     if (typeof key !== "string" || typeof value !== "number" || !Number.isFinite(value)) {
       return;
     }
-    const bucketKey = rowDateValue(row);
-    if (typeof bucketKey !== "string" || bucketKey.length === 0) {
+    const bucket = rowTemporalBucket(row, grouping, config);
+    if (!bucket) {
       return;
     }
-    const bucketTimestamp = startOfDayTimestamp(bucketKey);
-    if (bucketTimestamp === null) {
-      return;
-    }
-    bucketTimestamps.set(bucketKey, bucketTimestamp);
+    bucketsByKey.set(bucket.key, {
+      headingLabel: grouping === "day" ? void 0 : bucket.heading,
+      key: bucket.key,
+      label: bucket.label,
+      lineNumbers: bucketLineNumbers.get(bucket.key) ?? [],
+      timestamp: bucket.startTimestamp
+    });
     bucketLineNumbers.set(
-      bucketKey,
-      appendUniqueLineNumber(bucketLineNumbers.get(bucketKey) ?? [], row.lineNumber)
+      bucket.key,
+      appendUniqueLineNumber(bucketLineNumbers.get(bucket.key) ?? [], row.lineNumber)
     );
-    const segments = stackSegments.get(bucketKey) ?? [];
+    const segments = stackSegments.get(bucket.key) ?? [];
     segments.push({
-      bucketKey,
+      bucketKey: bucket.key,
       key,
       label: displayMetricKey(key),
       lineNumbers: [row.lineNumber],
       precision: rawRowValuePrecision(row),
-      timestamp: rowTimestamp(row) ?? bucketTimestamp,
+      timestamp: rowTimestamp(row) ?? bucket.startTimestamp,
       value
     });
-    stackSegments.set(bucketKey, segments);
+    stackSegments.set(bucket.key, segments);
   });
-  const buckets = Array.from(bucketTimestamps.entries()).sort((left, right) => (left[1] ?? Number.NEGATIVE_INFINITY) - (right[1] ?? Number.NEGATIVE_INFINITY)).map(([key, timestamp]) => ({
-    key,
-    label: key,
-    lineNumbers: bucketLineNumbers.get(key) ?? [],
-    timestamp
+  const buckets = Array.from(bucketsByKey.values()).sort((left, right) => (left.timestamp ?? Number.NEGATIVE_INFINITY) - (right.timestamp ?? Number.NEGATIVE_INFINITY)).map((bucket) => ({
+    ...bucket,
+    lineNumbers: bucketLineNumbers.get(bucket.key) ?? []
   }));
   if (buckets.length === 0) {
     return null;
@@ -2155,7 +2378,7 @@ function buildDailyPanel(rows, unitKey, unitLabel) {
     unitLabel
   };
 }
-function buildTemporalPanel(rows, unitKey, unitLabel, bucketByDay) {
+function buildTemporalPanel(rows, unitKey, unitLabel) {
   const valuePrecision = preferredPrecisionForRows(rows);
   const seriesOrder = uniqueStrings(
     rows.map((row) => row.metric?.key).filter((value) => typeof value === "string" && value.length > 0)
@@ -2170,11 +2393,11 @@ function buildTemporalPanel(rows, unitKey, unitLabel, bucketByDay) {
       return;
     }
     const timestamp = rowTimestamp(row);
-    const bucketKey = bucketByDay ? rowDateValue(row) : row.metric?.ts;
+    const bucketKey = row.metric?.ts;
     if (typeof bucketKey !== "string" || bucketKey.length === 0) {
       return;
     }
-    const bucketTimestamp = bucketByDay ? startOfDayTimestamp(bucketKey) : timestamp;
+    const bucketTimestamp = timestamp;
     if (bucketTimestamp === null) {
       return;
     }
@@ -2394,7 +2617,7 @@ function buildKeyPanel(rows, unitKey, unitLabel) {
     unitLabel
   };
 }
-function buildMetricsChartModel(rows, groupBy) {
+function buildMetricsChartModel(rows, groupBy, config) {
   const plottableRows = rows.filter(hasPlottableValue);
   if (plottableRows.length === 0) {
     return null;
@@ -2409,8 +2632,8 @@ function buildMetricsChartModel(rows, groupBy) {
       return (normalizeMetricUnitKey(row.metric?.unit) ?? NO_UNIT_KEY) === unitKey;
     });
     const unitLabel = unitKey === NO_UNIT_KEY ? null : displayMetricUnit(unitKey) ?? unitKey;
-    if (groupBy === "day") {
-      return buildDailyPanel(unitRows, unitKey, unitLabel);
+    if (groupBy === "day" || groupBy === "week" || groupBy === "month" || groupBy === "year") {
+      return buildTemporalGroupPanel(unitRows, unitKey, unitLabel, groupBy, config);
     }
     if (groupBy === "source") {
       return buildSourcePanel(unitRows, unitKey, unitLabel);
@@ -2418,7 +2641,7 @@ function buildMetricsChartModel(rows, groupBy) {
     if (groupBy === "key") {
       return buildKeyPanel(unitRows, unitKey, unitLabel);
     }
-    const temporalPanel = buildTemporalPanel(unitRows, unitKey, unitLabel, false);
+    const temporalPanel = buildTemporalPanel(unitRows, unitKey, unitLabel);
     if (temporalPanel) {
       return temporalPanel;
     }
@@ -2470,6 +2693,9 @@ function formatChartTooltipValue(value, metricKey, rawPrecision, unit) {
   });
 }
 function formatBucketLabel(bucket, axisKind) {
+  if (bucket.headingLabel) {
+    return bucket.label;
+  }
   if (axisKind === "time" && bucket.timestamp !== null) {
     return bucket.label.length === 10 ? bucket.label : new Intl.DateTimeFormat(void 0, {
       month: "short",
@@ -2479,6 +2705,9 @@ function formatBucketLabel(bucket, axisKind) {
   return bucket.label;
 }
 function formatBucketHeading(bucket, axisKind) {
+  if (bucket.headingLabel) {
+    return bucket.headingLabel;
+  }
   if (axisKind !== "time" || bucket.timestamp === null) {
     return bucket.label;
   }
@@ -3238,52 +3467,8 @@ function formatMetricValue(row) {
     rawPrecision: rawValuePrecision(row.rawLine)
   });
 }
-function toLocalDateString(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-function startOfToday() {
-  const date = /* @__PURE__ */ new Date();
-  date.setHours(0, 0, 0, 0);
-  return date;
-}
-function addDays(date, days) {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-  next.setHours(0, 0, 0, 0);
-  return next;
-}
-function addMonths(date, months) {
-  const next = new Date(date);
-  const originalDay = next.getDate();
-  next.setDate(1);
-  next.setMonth(next.getMonth() + months);
-  const lastDayOfMonth = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
-  next.setDate(Math.min(originalDay, lastDayOfMonth));
-  next.setHours(0, 0, 0, 0);
-  return next;
-}
-function addYears(date, years) {
-  return addMonths(date, years * 12);
-}
-function startOfMonth(date) {
-  const next = new Date(date);
-  next.setDate(1);
-  next.setHours(0, 0, 0, 0);
-  return next;
-}
-function startOfWeek(date) {
-  const next = new Date(date);
-  const day = next.getDay();
-  const offset = day === 0 ? -6 : 1 - day;
-  next.setDate(next.getDate() + offset);
-  next.setHours(0, 0, 0, 0);
-  return next;
-}
-function resolvedTimeRange(viewState) {
-  const today = startOfToday();
+function resolvedTimeRangeForSettings(viewState, config) {
+  const today = currentEffectiveDate(config);
   switch (viewState.timeRange) {
     case "today":
       return {
@@ -3292,7 +3477,7 @@ function resolvedTimeRange(viewState) {
       };
     case "this-week":
       return {
-        fromDate: toLocalDateString(startOfWeek(today)),
+        fromDate: toLocalDateString(startOfWeek(today, config.weekStartsOn)),
         toDate: toLocalDateString(today)
       };
     case "past-7-days":
@@ -3417,9 +3602,9 @@ function metricFilterAriaLabel(selectedKeys, metricNameDisplayMode) {
 function uniqueLineNumbers2(lineNumbers) {
   return Array.from(new Set(lineNumbers));
 }
-function applyMetricsViewState(rows, viewState) {
+function applyMetricsViewState(rows, viewState, config) {
   const normalizedSearch = viewState.searchText.trim().toLowerCase();
-  const { fromDate, toDate } = resolvedTimeRange(viewState);
+  const { fromDate, toDate } = resolvedTimeRangeForSettings(viewState, config);
   const selectedKeys = new Set(viewState.keys);
   const filteredRows = rows.filter((row) => {
     if (selectedKeys.size > 0 && !selectedKeys.has(row.metric?.key ?? "")) {
@@ -3431,7 +3616,7 @@ function applyMetricsViewState(rows, viewState) {
     if (viewState.status !== "all" && row.status !== viewState.status) {
       return false;
     }
-    const rowDate = rowDateValue(row);
+    const rowDate = rowDateValue(row, config);
     if (fromDate && (!rowDate || rowDate < fromDate)) {
       return false;
     }
@@ -3668,19 +3853,28 @@ function buildMetricsSummaryRows(rows, computation, metricNameDisplayMode) {
     ];
   });
 }
-function groupRowsByDay(rows) {
+function groupRowsByTemporal(rows, grouping, config) {
   const groups = /* @__PURE__ */ new Map();
+  const headings = /* @__PURE__ */ new Map();
   rows.forEach((row) => {
-    const day = rowDateValue(row);
-    const key = day ?? "__no_date__";
+    const bucket = rowTemporalBucket(row, grouping, config);
+    const key = bucket?.key ?? "__no_date__";
     const current = groups.get(key) ?? [];
     current.push(row);
     groups.set(key, current);
+    if (bucket) {
+      headings.set(key, {
+        heading: bucket.heading,
+        headingParts: bucket.headingParts,
+        linkTarget: bucket.linkTarget
+      });
+    }
   });
   return Array.from(groups.entries()).map(([key, groupedRows2]) => ({
-    heading: key === "__no_date__" ? "No date" : key,
+    heading: key === "__no_date__" ? "No date" : headings.get(key)?.heading ?? key,
+    headingParts: key === "__no_date__" ? void 0 : headings.get(key)?.headingParts,
     key,
-    linkTarget: key === "__no_date__" ? void 0 : key,
+    linkTarget: key === "__no_date__" ? void 0 : headings.get(key)?.linkTarget,
     rows: groupedRows2
   }));
 }
@@ -3699,10 +3893,13 @@ function groupRowsByField(rows, field, metricNameDisplayMode) {
     rows: groupedRows2
   }));
 }
-function groupedRows(rows, groupBy, metricNameDisplayMode) {
+function groupedRows(rows, groupBy, metricNameDisplayMode, config) {
   switch (groupBy) {
     case "day":
-      return groupRowsByDay(rows);
+    case "week":
+    case "month":
+    case "year":
+      return groupRowsByTemporal(rows, groupBy, config);
     case "key":
       return groupRowsByField(rows, "key", metricNameDisplayMode);
     case "source":
@@ -3716,6 +3913,12 @@ function groupBySummaryLabel(groupBy) {
   switch (groupBy) {
     case "day":
       return "grouped by day";
+    case "week":
+      return "grouped by week";
+    case "month":
+      return "grouped by month";
+    case "year":
+      return "grouped by year";
     case "key":
       return "grouped by metric";
     case "source":
@@ -3727,6 +3930,26 @@ function groupBySummaryLabel(groupBy) {
 }
 function renderGroupHeading(container, group, plugin, sourcePath) {
   const heading = container.createEl("h2");
+  if (group.headingParts && group.headingParts.length > 0) {
+    group.headingParts.forEach((part) => {
+      if (!part.linkTarget) {
+        heading.createSpan({ text: part.text });
+        return;
+      }
+      const link2 = heading.createEl("a", {
+        cls: "internal-link",
+        href: part.linkTarget,
+        text: part.text
+      });
+      link2.dataset.href = part.linkTarget;
+      link2.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        void plugin.app.workspace.openLinkText(part.linkTarget, sourcePath);
+      });
+    });
+    return;
+  }
   if (!group.linkTarget) {
     heading.setText(group.heading);
     return;
@@ -4262,7 +4485,10 @@ var MetricsFileView = class extends import_obsidian7.TextFileView {
     if (!this.viewState.showChart || visibleRows.length === 0) {
       return;
     }
-    const chartModel = buildMetricsChartModel(visibleRows, this.viewState.groupBy);
+    const chartModel = buildMetricsChartModel(visibleRows, this.viewState.groupBy, {
+      dayStartHour: this.plugin.settings.dayStartHour,
+      weekStartsOn: this.plugin.settings.weekStartsOn
+    });
     if (!chartModel) {
       return;
     }
@@ -4303,7 +4529,10 @@ var MetricsFileView = class extends import_obsidian7.TextFileView {
     if (normalizedViewState) {
       this.persistCurrentViewState();
     }
-    const visibleRows = applyMetricsViewState(analysis.rows, this.viewState);
+    const visibleRows = applyMetricsViewState(analysis.rows, this.viewState, {
+      dayStartHour: this.plugin.settings.dayStartHour,
+      weekStartsOn: this.plugin.settings.weekStartsOn
+    });
     const hasActiveControls = hasActiveViewControls(this.viewState);
     this.syncHeaderActions();
     this.renderChart(container, visibleRows);
@@ -4337,7 +4566,11 @@ var MetricsFileView = class extends import_obsidian7.TextFileView {
         groupedRows(
           visibleRows,
           this.viewState.groupBy,
-          this.plugin.settings.metricNameDisplayMode
+          this.plugin.settings.metricNameDisplayMode,
+          {
+            dayStartHour: this.plugin.settings.dayStartHour,
+            weekStartsOn: this.plugin.settings.weekStartsOn
+          }
         ).forEach((group) => {
           const groupSection = recordsSection.createDiv({ cls: "metrics-lens-group" });
           const headingContainer = groupSection.createDiv({
@@ -4606,6 +4839,9 @@ var MetricsFileView = class extends import_obsidian7.TextFileView {
       [
         { label: "No grouping", value: "none" },
         { label: "Group by day", value: "day" },
+        { label: "Group by week", value: "week" },
+        { label: "Group by month", value: "month" },
+        { label: "Group by year", value: "year" },
         { label: "Group by metric", value: "key" },
         { label: "Group by source", value: "source" }
       ].forEach((option) => {

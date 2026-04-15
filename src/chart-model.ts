@@ -10,9 +10,13 @@ import {
   resolveMetricFractionDigits,
 } from "./metric-value-format";
 import {
-  rowDateValue,
+  rowTemporalBucket,
   rowTimestamp,
 } from "./metrics-row-selectors";
+import {
+  type MetricsTemporalGrouping,
+  type MetricsTimeBoundaryConfig,
+} from "./time-boundaries";
 import type { MetricsGroupBy } from "./view-state";
 
 export type MetricsChartKind = "bar" | "line";
@@ -43,6 +47,7 @@ export interface MetricsChartStackSegment {
 }
 
 export interface MetricsChartBucket {
+  headingLabel?: string;
   key: string;
   label: string;
   lineNumbers: number[];
@@ -70,15 +75,6 @@ export interface MetricsChartModel {
 }
 
 export const NO_UNIT_KEY = "__no_unit__";
-
-function startOfDayTimestamp(day: string): number | null {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) {
-    return null;
-  }
-
-  const timestamp = Date.parse(`${day}T00:00:00Z`);
-  return Number.isNaN(timestamp) ? null : timestamp;
-}
 
 function uniqueStrings(values: string[]): string[] {
   return Array.from(new Set(values));
@@ -244,10 +240,12 @@ function collectStackedValueRange(stackSegments: Map<string, MetricsChartStackSe
   };
 }
 
-function buildDailyPanel(
+function buildTemporalGroupPanel(
   rows: ParsedMetricRow[],
   unitKey: string,
   unitLabel: string | null,
+  grouping: MetricsTemporalGrouping,
+  config: MetricsTimeBoundaryConfig,
 ): MetricsChartPanel | null {
   const valuePrecision = preferredPrecisionForRows(rows);
   const seriesOrder = uniqueStrings(
@@ -256,8 +254,8 @@ function buildDailyPanel(
       .filter((value): value is string => typeof value === "string" && value.length > 0),
   );
 
+  const bucketsByKey = new Map<string, MetricsChartBucket>();
   const bucketLineNumbers = new Map<string, number[]>();
-  const bucketTimestamps = new Map<string, number | null>();
   const stackSegments = new Map<string, MetricsChartStackSegment[]>();
 
   rows.forEach((row) => {
@@ -267,42 +265,41 @@ function buildDailyPanel(
       return;
     }
 
-    const bucketKey = rowDateValue(row);
-    if (typeof bucketKey !== "string" || bucketKey.length === 0) {
+    const bucket = rowTemporalBucket(row, grouping, config);
+    if (!bucket) {
       return;
     }
 
-    const bucketTimestamp = startOfDayTimestamp(bucketKey);
-    if (bucketTimestamp === null) {
-      return;
-    }
-
-    bucketTimestamps.set(bucketKey, bucketTimestamp);
+    bucketsByKey.set(bucket.key, {
+      headingLabel: grouping === "day" ? undefined : bucket.heading,
+      key: bucket.key,
+      label: bucket.label,
+      lineNumbers: bucketLineNumbers.get(bucket.key) ?? [],
+      timestamp: bucket.startTimestamp,
+    });
     bucketLineNumbers.set(
-      bucketKey,
-      appendUniqueLineNumber(bucketLineNumbers.get(bucketKey) ?? [], row.lineNumber),
+      bucket.key,
+      appendUniqueLineNumber(bucketLineNumbers.get(bucket.key) ?? [], row.lineNumber),
     );
 
-    const segments = stackSegments.get(bucketKey) ?? [];
+    const segments = stackSegments.get(bucket.key) ?? [];
     segments.push({
-      bucketKey,
+      bucketKey: bucket.key,
       key,
       label: displayMetricKey(key),
       lineNumbers: [row.lineNumber],
       precision: rawRowValuePrecision(row),
-      timestamp: rowTimestamp(row) ?? bucketTimestamp,
+      timestamp: rowTimestamp(row) ?? bucket.startTimestamp,
       value,
     });
-    stackSegments.set(bucketKey, segments);
+    stackSegments.set(bucket.key, segments);
   });
 
-  const buckets = Array.from(bucketTimestamps.entries())
-    .sort((left, right) => (left[1] ?? Number.NEGATIVE_INFINITY) - (right[1] ?? Number.NEGATIVE_INFINITY))
-    .map(([key, timestamp]) => ({
-      key,
-      label: key,
-      lineNumbers: bucketLineNumbers.get(key) ?? [],
-      timestamp,
+  const buckets = Array.from(bucketsByKey.values())
+    .sort((left, right) => (left.timestamp ?? Number.NEGATIVE_INFINITY) - (right.timestamp ?? Number.NEGATIVE_INFINITY))
+    .map((bucket) => ({
+      ...bucket,
+      lineNumbers: bucketLineNumbers.get(bucket.key) ?? [],
     }));
 
   if (buckets.length === 0) {
@@ -353,7 +350,6 @@ function buildTemporalPanel(
   rows: ParsedMetricRow[],
   unitKey: string,
   unitLabel: string | null,
-  bucketByDay: boolean,
 ): MetricsChartPanel | null {
   const valuePrecision = preferredPrecisionForRows(rows);
   const seriesOrder = uniqueStrings(
@@ -374,12 +370,12 @@ function buildTemporalPanel(
     }
 
     const timestamp = rowTimestamp(row);
-    const bucketKey = bucketByDay ? rowDateValue(row) : row.metric?.ts;
+    const bucketKey = row.metric?.ts;
     if (typeof bucketKey !== "string" || bucketKey.length === 0) {
       return;
     }
 
-    const bucketTimestamp = bucketByDay ? startOfDayTimestamp(bucketKey) : timestamp;
+    const bucketTimestamp = timestamp;
     if (bucketTimestamp === null) {
       return;
     }
@@ -653,6 +649,7 @@ function buildKeyPanel(
 export function buildMetricsChartModel(
   rows: ParsedMetricRow[],
   groupBy: MetricsGroupBy,
+  config: MetricsTimeBoundaryConfig,
 ): MetricsChartModel | null {
   const plottableRows = rows.filter(hasPlottableValue);
   if (plottableRows.length === 0) {
@@ -672,8 +669,8 @@ export function buildMetricsChartModel(
       });
       const unitLabel = unitKey === NO_UNIT_KEY ? null : displayMetricUnit(unitKey) ?? unitKey;
 
-      if (groupBy === "day") {
-        return buildDailyPanel(unitRows, unitKey, unitLabel);
+      if (groupBy === "day" || groupBy === "week" || groupBy === "month" || groupBy === "year") {
+        return buildTemporalGroupPanel(unitRows, unitKey, unitLabel, groupBy, config);
       }
 
       if (groupBy === "source") {
@@ -684,7 +681,7 @@ export function buildMetricsChartModel(
         return buildKeyPanel(unitRows, unitKey, unitLabel);
       }
 
-      const temporalPanel = buildTemporalPanel(unitRows, unitKey, unitLabel, false);
+      const temporalPanel = buildTemporalPanel(unitRows, unitKey, unitLabel);
       if (temporalPanel) {
         return temporalPanel;
       }

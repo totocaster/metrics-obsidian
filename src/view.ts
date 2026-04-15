@@ -26,8 +26,20 @@ import {
 } from "./metrics-file-model";
 import {
   rowDateValue,
+  rowTemporalBucket,
   rowTimestamp,
+  type MetricsHeadingPart,
 } from "./metrics-row-selectors";
+import {
+  addDays,
+  addMonths,
+  addYears,
+  currentEffectiveDate,
+  startOfMonth,
+  startOfWeek,
+  toLocalDateString,
+  type MetricsTimeBoundaryConfig,
+} from "./time-boundaries";
 import {
   createDefaultViewState,
   DEFAULT_VIEW_STATE,
@@ -79,62 +91,14 @@ function formatMetricValue(row: ParsedMetricRow): string | null {
   });
 }
 
-function toLocalDateString(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function startOfToday(): Date {
-  const date = new Date();
-  date.setHours(0, 0, 0, 0);
-  return date;
-}
-
-function addDays(date: Date, days: number): Date {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-  next.setHours(0, 0, 0, 0);
-  return next;
-}
-
-function addMonths(date: Date, months: number): Date {
-  const next = new Date(date);
-  const originalDay = next.getDate();
-  next.setDate(1);
-  next.setMonth(next.getMonth() + months);
-  const lastDayOfMonth = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
-  next.setDate(Math.min(originalDay, lastDayOfMonth));
-  next.setHours(0, 0, 0, 0);
-  return next;
-}
-
-function addYears(date: Date, years: number): Date {
-  return addMonths(date, years * 12);
-}
-
-function startOfMonth(date: Date): Date {
-  const next = new Date(date);
-  next.setDate(1);
-  next.setHours(0, 0, 0, 0);
-  return next;
-}
-
-function startOfWeek(date: Date): Date {
-  const next = new Date(date);
-  const day = next.getDay();
-  const offset = day === 0 ? -6 : 1 - day;
-  next.setDate(next.getDate() + offset);
-  next.setHours(0, 0, 0, 0);
-  return next;
-}
-
-function resolvedTimeRange(viewState: MetricsViewState): {
+function resolvedTimeRangeForSettings(
+  viewState: MetricsViewState,
+  config: MetricsTimeBoundaryConfig,
+): {
   fromDate: string;
   toDate: string;
 } {
-  const today = startOfToday();
+  const today = currentEffectiveDate(config);
 
   switch (viewState.timeRange) {
     case "today":
@@ -144,7 +108,7 @@ function resolvedTimeRange(viewState: MetricsViewState): {
       };
     case "this-week":
       return {
-        fromDate: toLocalDateString(startOfWeek(today)),
+        fromDate: toLocalDateString(startOfWeek(today, config.weekStartsOn)),
         toDate: toLocalDateString(today),
       };
     case "past-7-days":
@@ -318,9 +282,10 @@ function uniqueLineNumbers(lineNumbers: number[]): number[] {
 function applyMetricsViewState(
   rows: ParsedMetricRow[],
   viewState: MetricsViewState,
+  config: MetricsTimeBoundaryConfig,
 ): ParsedMetricRow[] {
   const normalizedSearch = viewState.searchText.trim().toLowerCase();
-  const { fromDate, toDate } = resolvedTimeRange(viewState);
+  const { fromDate, toDate } = resolvedTimeRangeForSettings(viewState, config);
   const selectedKeys = new Set(viewState.keys);
 
   const filteredRows = rows.filter((row) => {
@@ -336,7 +301,7 @@ function applyMetricsViewState(
       return false;
     }
 
-    const rowDate = rowDateValue(row);
+    const rowDate = rowDateValue(row, config);
     if (fromDate && (!rowDate || rowDate < fromDate)) {
       return false;
     }
@@ -526,6 +491,7 @@ function advancedControlCount(viewState: MetricsViewState): number {
 
 interface MetricsRowGroup {
   heading: string;
+  headingParts?: MetricsHeadingPart[];
   key: string;
   linkTarget?: string;
   rows: ParsedMetricRow[];
@@ -676,21 +642,34 @@ function buildMetricsSummaryRows(
   });
 }
 
-function groupRowsByDay(rows: ParsedMetricRow[]): MetricsRowGroup[] {
+function groupRowsByTemporal(
+  rows: ParsedMetricRow[],
+  grouping: "day" | "week" | "month" | "year",
+  config: MetricsTimeBoundaryConfig,
+): MetricsRowGroup[] {
   const groups = new Map<string, ParsedMetricRow[]>();
+  const headings = new Map<string, { heading: string; headingParts?: MetricsHeadingPart[]; linkTarget?: string }>();
 
   rows.forEach((row) => {
-    const day = rowDateValue(row);
-    const key = day ?? "__no_date__";
+    const bucket = rowTemporalBucket(row, grouping, config);
+    const key = bucket?.key ?? "__no_date__";
     const current = groups.get(key) ?? [];
     current.push(row);
     groups.set(key, current);
+    if (bucket) {
+      headings.set(key, {
+        heading: bucket.heading,
+        headingParts: bucket.headingParts,
+        linkTarget: bucket.linkTarget,
+      });
+    }
   });
 
   return Array.from(groups.entries()).map(([key, groupedRows]) => ({
-    heading: key === "__no_date__" ? "No date" : key,
+    heading: key === "__no_date__" ? "No date" : (headings.get(key)?.heading ?? key),
+    headingParts: key === "__no_date__" ? undefined : headings.get(key)?.headingParts,
     key,
-    linkTarget: key === "__no_date__" ? undefined : key,
+    linkTarget: key === "__no_date__" ? undefined : headings.get(key)?.linkTarget,
     rows: groupedRows,
   }));
 }
@@ -728,10 +707,14 @@ function groupedRows(
   rows: ParsedMetricRow[],
   groupBy: MetricsGroupBy,
   metricNameDisplayMode: MetricNameDisplayMode,
+  config: MetricsTimeBoundaryConfig,
 ): MetricsRowGroup[] {
   switch (groupBy) {
     case "day":
-      return groupRowsByDay(rows);
+    case "week":
+    case "month":
+    case "year":
+      return groupRowsByTemporal(rows, groupBy, config);
     case "key":
       return groupRowsByField(rows, "key", metricNameDisplayMode);
     case "source":
@@ -746,6 +729,12 @@ function groupBySummaryLabel(groupBy: MetricsGroupBy): string | null {
   switch (groupBy) {
     case "day":
       return "grouped by day";
+    case "week":
+      return "grouped by week";
+    case "month":
+      return "grouped by month";
+    case "year":
+      return "grouped by year";
     case "key":
       return "grouped by metric";
     case "source":
@@ -763,6 +752,28 @@ function renderGroupHeading(
   sourcePath: string,
 ): void {
   const heading = container.createEl("h2");
+
+  if (group.headingParts && group.headingParts.length > 0) {
+    group.headingParts.forEach((part) => {
+      if (!part.linkTarget) {
+        heading.createSpan({ text: part.text });
+        return;
+      }
+
+      const link = heading.createEl("a", {
+        cls: "internal-link",
+        href: part.linkTarget,
+        text: part.text,
+      });
+      link.dataset.href = part.linkTarget;
+      link.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        void plugin.app.workspace.openLinkText(part.linkTarget!, sourcePath);
+      });
+    });
+    return;
+  }
 
   if (!group.linkTarget) {
     heading.setText(group.heading);
@@ -1444,7 +1455,10 @@ export class MetricsFileView extends TextFileView {
       return;
     }
 
-    const chartModel = buildMetricsChartModel(visibleRows, this.viewState.groupBy);
+    const chartModel = buildMetricsChartModel(visibleRows, this.viewState.groupBy, {
+      dayStartHour: this.plugin.settings.dayStartHour,
+      weekStartsOn: this.plugin.settings.weekStartsOn,
+    });
     if (!chartModel) {
       return;
     }
@@ -1491,7 +1505,10 @@ export class MetricsFileView extends TextFileView {
     if (normalizedViewState) {
       this.persistCurrentViewState();
     }
-    const visibleRows = applyMetricsViewState(analysis.rows, this.viewState);
+    const visibleRows = applyMetricsViewState(analysis.rows, this.viewState, {
+      dayStartHour: this.plugin.settings.dayStartHour,
+      weekStartsOn: this.plugin.settings.weekStartsOn,
+    });
     const hasActiveControls = hasActiveViewControls(this.viewState);
     this.syncHeaderActions();
 
@@ -1530,6 +1547,10 @@ export class MetricsFileView extends TextFileView {
           visibleRows,
           this.viewState.groupBy,
           this.plugin.settings.metricNameDisplayMode,
+          {
+            dayStartHour: this.plugin.settings.dayStartHour,
+            weekStartsOn: this.plugin.settings.weekStartsOn,
+          },
         ).forEach((group) => {
           const groupSection = recordsSection.createDiv({ cls: "metrics-lens-group" });
           const headingContainer = groupSection.createDiv({
@@ -1828,6 +1849,9 @@ export class MetricsFileView extends TextFileView {
       [
         { label: "No grouping", value: "none" },
         { label: "Group by day", value: "day" },
+        { label: "Group by week", value: "week" },
+        { label: "Group by month", value: "month" },
+        { label: "Group by year", value: "year" },
         { label: "Group by metric", value: "key" },
         { label: "Group by source", value: "source" },
       ].forEach((option) => {

@@ -62,6 +62,7 @@ Contract rules:
 - `src/chart-renderer.ts`: native SVG chart rendering
 - `src/metric-catalog.json`: first-party metric and unit catalog
 - `src/settings.ts`: plugin settings persistence
+- `src/time-boundaries.ts`: vault-level time boundary settings and temporal bucket helpers
 - `src/view-state.ts`: per-file persisted view state
 - `styles.css`: scoped plugin styling
 

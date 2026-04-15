@@ -22,7 +22,7 @@ The goal is to make metrics feel like normal vault data instead of app-owned sta
 - Cross-file command-palette search that jumps to the matching row
 - Filtering by time range, metric, source, validation status, and free text
 - Sorting by newest, oldest, value high-low, and value low-high
-- Grouping by day, metric, or source
+- Grouping by day, week, month, year, metric, or source
 - Optional derived summary rows for average, median, minimum, maximum, sum, and count
 - Optional charts driven by the same visible rows as the timeline
 - Per-file view state persistence
@@ -118,6 +118,8 @@ The plugin includes a small settings pane for vault-level conventions:
 - supported extensions
 - default write file
 - record reference prefix
+- week start day
+- day start hour for time ranges and date-derived grouping
 - metric label display mode: friendly names or canonical keys
 - metric icon visibility
 

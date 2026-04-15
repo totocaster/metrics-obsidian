@@ -1,7 +1,8 @@
 import type { MetricRowStatus } from "./metrics-file-model";
+import type { MetricsTemporalGrouping } from "./time-boundaries";
 
 export type MetricsSortOrder = "newest" | "oldest" | "value-desc" | "value-asc";
-export type MetricsGroupBy = "none" | "day" | "key" | "source";
+export type MetricsGroupBy = "none" | MetricsTemporalGrouping | "key" | "source";
 export type MetricsSummaryComputation = "none" | "avg" | "median" | "min" | "max" | "sum" | "count";
 export type MetricsStatusFilter = "all" | MetricRowStatus;
 export type MetricsTimeRange =
@@ -71,7 +72,14 @@ function normalizeSortOrder(value: unknown): MetricsSortOrder {
 }
 
 function normalizeGroupBy(value: unknown): MetricsGroupBy {
-  return value === "day" || value === "key" || value === "source" ? value : "none";
+  return value === "day" ||
+    value === "week" ||
+    value === "month" ||
+    value === "year" ||
+    value === "key" ||
+    value === "source"
+    ? value
+    : "none";
 }
 
 function normalizeStatus(value: unknown): MetricsStatusFilter {

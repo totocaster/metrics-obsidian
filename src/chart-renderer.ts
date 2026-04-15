@@ -99,6 +99,10 @@ function formatChartTooltipValue(
 }
 
 function formatBucketLabel(bucket: MetricsChartBucket, axisKind: MetricsChartPanel["axisKind"]): string {
+  if (bucket.headingLabel) {
+    return bucket.label;
+  }
+
   if (axisKind === "time" && bucket.timestamp !== null) {
     return bucket.label.length === 10
       ? bucket.label
@@ -112,6 +116,10 @@ function formatBucketLabel(bucket: MetricsChartBucket, axisKind: MetricsChartPan
 }
 
 function formatBucketHeading(bucket: MetricsChartBucket, axisKind: MetricsChartPanel["axisKind"]): string {
+  if (bucket.headingLabel) {
+    return bucket.headingLabel;
+  }
+
   if (axisKind !== "time" || bucket.timestamp === null) {
     return bucket.label;
   }

@@ -3,11 +3,18 @@ import { App, PluginSettingTab, Setting, normalizePath } from "obsidian";
 import type { MetricNameDisplayMode } from "./metric-catalog";
 import type MetricsPlugin from "./main";
 import {
+  DEFAULT_TIME_BOUNDARY_CONFIG,
+  normalizeDayStartHour,
+  normalizeWeekStartsOn,
+  type MetricsWeekStartDay,
+} from "./time-boundaries";
+import {
   normalizePersistedMetricsViewState,
   type PersistedMetricsViewState,
 } from "./view-state";
 
 export interface MetricsPluginSettings {
+  dayStartHour: number;
   defaultWriteFile: string;
   metricNameDisplayMode: MetricNameDisplayMode;
   metricsRoot: string;
@@ -15,9 +22,11 @@ export interface MetricsPluginSettings {
   recordReferencePrefix: string;
   showMetricIcons: boolean;
   supportedExtensions: string[];
+  weekStartsOn: MetricsWeekStartDay;
 }
 
 export const DEFAULT_SETTINGS: MetricsPluginSettings = {
+  dayStartHour: DEFAULT_TIME_BOUNDARY_CONFIG.dayStartHour,
   defaultWriteFile: "Metrics/All.metrics.ndjson",
   metricNameDisplayMode: "friendly",
   metricsRoot: "Metrics",
@@ -25,6 +34,7 @@ export const DEFAULT_SETTINGS: MetricsPluginSettings = {
   recordReferencePrefix: "metric:",
   showMetricIcons: true,
   supportedExtensions: [".metrics.ndjson"],
+  weekStartsOn: DEFAULT_TIME_BOUNDARY_CONFIG.weekStartsOn,
 };
 
 export function normalizeMetricsSettings(
@@ -41,6 +51,7 @@ export function normalizeMetricsSettings(
   );
 
   return {
+    dayStartHour: normalizeDayStartHour(settings.dayStartHour),
     defaultWriteFile: normalizePath(settings.defaultWriteFile ?? DEFAULT_SETTINGS.defaultWriteFile),
     metricNameDisplayMode:
       settings.metricNameDisplayMode === "key" ? "key" : DEFAULT_SETTINGS.metricNameDisplayMode,
@@ -56,6 +67,7 @@ export function normalizeMetricsSettings(
           .filter((value) => value.length > 0),
       ),
     ),
+    weekStartsOn: normalizeWeekStartsOn(settings.weekStartsOn),
   };
 }
 
@@ -69,6 +81,23 @@ function parseExtensions(value: string): string[] {
     .map((item) => item.trim())
     .filter((item) => item.length > 0);
 }
+
+function hourLabel(hour: number): string {
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(2000, 0, 1, hour));
+}
+
+const WEEKDAY_OPTIONS: Array<{ label: string; value: MetricsWeekStartDay }> = [
+  { label: "Sunday", value: 0 },
+  { label: "Monday", value: 1 },
+  { label: "Tuesday", value: 2 },
+  { label: "Wednesday", value: 3 },
+  { label: "Thursday", value: 4 },
+  { label: "Friday", value: 5 },
+  { label: "Saturday", value: 6 },
+];
 
 export class MetricsSettingTab extends PluginSettingTab {
   constructor(
@@ -136,6 +165,40 @@ export class MetricsSettingTab extends PluginSettingTab {
         text.onChange(async (value) => {
           this.plugin.settings.recordReferencePrefix =
             value.trim() || DEFAULT_SETTINGS.recordReferencePrefix;
+          await this.plugin.saveSettings();
+          this.plugin.refreshOpenMetricsViews();
+        });
+      });
+
+    new Setting(containerEl).setName("Time boundaries").setHeading();
+
+    new Setting(containerEl)
+      .setName("Week starts on")
+      .setDesc("Controls week grouping and the “this week” range.")
+      .addDropdown((dropdown) => {
+        WEEKDAY_OPTIONS.forEach((option) => {
+          dropdown.addOption(String(option.value), option.label);
+        });
+        dropdown.setValue(String(this.plugin.settings.weekStartsOn));
+        dropdown.onChange(async (value) => {
+          this.plugin.settings.weekStartsOn = normalizeWeekStartsOn(value);
+          await this.plugin.saveSettings();
+          this.plugin.refreshOpenMetricsViews();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("Day starts at")
+      .setDesc(
+        "Rows without an explicit date roll over to the next day at this local time for grouping and time ranges.",
+      )
+      .addDropdown((dropdown) => {
+        Array.from({ length: 24 }, (_, hour) => hour).forEach((hour) => {
+          dropdown.addOption(String(hour), hourLabel(hour));
+        });
+        dropdown.setValue(String(this.plugin.settings.dayStartHour));
+        dropdown.onChange(async (value) => {
+          this.plugin.settings.dayStartHour = normalizeDayStartHour(value);
           await this.plugin.saveSettings();
           this.plugin.refreshOpenMetricsViews();
         });
