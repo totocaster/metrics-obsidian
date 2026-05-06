@@ -12,7 +12,11 @@ import {
   type MetricRecord,
 } from "./contract";
 import { ScopedFileExplorerRelabelController } from "./file-explorer-relabel-controller";
-import { displayMetricName } from "./metric-catalog";
+import {
+  MetricCatalogMetricEditorModal,
+  MetricCatalogUnitEditorModal,
+} from "./metric-catalog-editor-modal";
+import { applyCustomMetricCatalog, displayMetricName } from "./metric-catalog";
 import { MetricRecordModal } from "./metric-record-modal";
 import { formatMetricDisplayValue, rawValuePrecision } from "./metric-value-format";
 import {
@@ -355,11 +359,28 @@ export default class MetricsPlugin extends Plugin {
   async loadSettings(): Promise<void> {
     const loaded = (await this.loadData()) as Partial<MetricsPluginSettings> | null;
     this.settings = normalizeMetricsSettings(loaded ?? DEFAULT_SETTINGS);
+    applyCustomMetricCatalog(this.settings.customCatalog);
   }
 
   async saveSettings(): Promise<void> {
     this.settings = normalizeMetricsSettings(this.settings);
+    applyCustomMetricCatalog(this.settings.customCatalog);
     await this.saveData(this.settings);
+  }
+
+  openMetricCatalogMetricEditor(options?: {
+    initialKey?: string;
+    initialUnit?: string | null;
+    onSaved?: () => void;
+  }): void {
+    new MetricCatalogMetricEditorModal(this.app, this, options).open();
+  }
+
+  openMetricCatalogUnitEditor(options?: {
+    initialUnit?: string;
+    onSaved?: () => void;
+  }): void {
+    new MetricCatalogUnitEditorModal(this.app, this, options).open();
   }
 
   getPersistedViewState(filePath: string | null): PersistedMetricsViewState {

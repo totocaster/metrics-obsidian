@@ -155,6 +155,50 @@ function openRecordMenu(
     });
   }
 
+  const metricKey = typeof row.metric?.key === "string" && row.metric.key.length > 0 ? row.metric.key : null;
+  const metricUnit = typeof row.metric?.unit === "string" && row.metric.unit.length > 0 ? row.metric.unit : null;
+  const hasUnknownKey = row.issues.some((issue) => issue.code === "unknown_key");
+  const hasUnknownUnit = row.issues.some((issue) => issue.code === "unknown_unit");
+  const hasMetricCatalogIssue = row.issues.some((issue) =>
+    issue.code === "unknown_key" ||
+    issue.code === "unsupported_unit_for_key" ||
+    issue.code === "mixed_key_unit",
+  );
+  if (metricKey && (hasMetricCatalogIssue || (hasUnknownUnit && metricUnit))) {
+    if (hasItems) {
+      menu.addSeparator();
+    }
+
+    if (hasMetricCatalogIssue) {
+      hasItems = true;
+      menu.addItem((item) => {
+        item
+          .setTitle(hasUnknownKey ? "Add metric to catalog" : "Edit metric catalog entry")
+          .setIcon(hasUnknownKey ? "plus" : "settings")
+          .onClick(() => {
+            plugin.openMetricCatalogMetricEditor({
+              initialKey: metricKey,
+              initialUnit: metricUnit,
+            });
+          });
+      });
+    }
+
+    if (hasUnknownUnit && metricUnit) {
+      hasItems = true;
+      menu.addItem((item) => {
+        item
+          .setTitle("Add unit to catalog")
+          .setIcon("plus")
+          .onClick(() => {
+            plugin.openMetricCatalogUnitEditor({
+              initialUnit: metricUnit,
+            });
+          });
+      });
+    }
+  }
+
   if (isEditableRecord(row.metric)) {
     const metric = row.metric;
 

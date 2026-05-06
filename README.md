@@ -122,6 +122,7 @@ The plugin includes a small settings pane for vault-level conventions:
 - day start hour for time ranges and date-derived grouping
 - metric label display mode: friendly names or canonical keys
 - metric icon visibility
+- custom metric catalog entries and advanced JSON
 
 ## Built-in catalog
 
@@ -135,6 +136,46 @@ It drives:
 - record modal suggestions
 
 Unknown keys remain allowed by the file contract so the plugin stays file-first and user-extensible.
+
+## Custom catalog
+
+Custom catalog entries are stored in this plugin's per-vault settings as a versioned JSON object. The plugin merges custom entries over the built-in catalog and uses the merged catalog for validation warnings, labels, unit formatting, icons, and record modal suggestions.
+
+The settings tab includes structured editors for custom metrics and custom units. Rows with catalog-related validation warnings also include catalog actions in the row menu, so an unknown metric can be added directly from the flagged record.
+
+The advanced JSON editor stores only the custom delta:
+
+```json
+{
+  "schemaVersion": 1,
+  "categories": {
+    "training": {
+      "label": "Training",
+      "iconCandidates": ["activity"]
+    }
+  },
+  "metrics": {
+    "training.run_distance": {
+      "label": "Run distance",
+      "category": "training",
+      "allowedUnits": ["km"],
+      "defaultUnit": "km",
+      "fractionDigits": 2,
+      "iconCandidates": ["activity"]
+    }
+  },
+  "units": {
+    "serving": {
+      "label": "Serving",
+      "display": "serving",
+      "aliases": ["servings"],
+      "fractionDigits": 1
+    }
+  }
+}
+```
+
+New metrics require `label`, `category`, and at least one `allowedUnits` entry. New units and categories require `label`. Existing built-in entries can be partially overridden by key.
 
 ## Development
 

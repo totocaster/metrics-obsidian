@@ -1,6 +1,14 @@
 import { App, PluginSettingTab, Setting, normalizePath } from "obsidian";
 
-import type { MetricNameDisplayMode } from "./metric-catalog";
+import {
+  createEmptyCustomMetricCatalog,
+  customMetricCatalogIssues,
+  displayMetricName,
+  displayMetricUnitOption,
+  normalizeCustomMetricCatalog,
+  type CustomMetricCatalogDefinition,
+  type MetricNameDisplayMode,
+} from "./metric-catalog";
 import type MetricsPlugin from "./main";
 import {
   DEFAULT_TIME_BOUNDARY_CONFIG,
@@ -14,6 +22,7 @@ import {
 } from "./view-state";
 
 export interface MetricsPluginSettings {
+  customCatalog: CustomMetricCatalogDefinition;
   dayStartHour: number;
   defaultWriteFile: string;
   metricNameDisplayMode: MetricNameDisplayMode;
@@ -26,6 +35,7 @@ export interface MetricsPluginSettings {
 }
 
 export const DEFAULT_SETTINGS: MetricsPluginSettings = {
+  customCatalog: createEmptyCustomMetricCatalog(),
   dayStartHour: DEFAULT_TIME_BOUNDARY_CONFIG.dayStartHour,
   defaultWriteFile: "Metrics/All.metrics.ndjson",
   metricNameDisplayMode: "friendly",
@@ -51,6 +61,7 @@ export function normalizeMetricsSettings(
   );
 
   return {
+    customCatalog: normalizeCustomMetricCatalog(settings.customCatalog),
     dayStartHour: normalizeDayStartHour(settings.dayStartHour),
     defaultWriteFile: normalizePath(settings.defaultWriteFile ?? DEFAULT_SETTINGS.defaultWriteFile),
     metricNameDisplayMode:
@@ -80,6 +91,39 @@ function parseExtensions(value: string): string[] {
     .split(",")
     .map((item) => item.trim())
     .filter((item) => item.length > 0);
+}
+
+function formatCustomCatalog(catalog: CustomMetricCatalogDefinition): string {
+  return JSON.stringify(normalizeCustomMetricCatalog(catalog), null, 2);
+}
+
+function cloneCustomCatalog(catalog: CustomMetricCatalogDefinition): CustomMetricCatalogDefinition {
+  return normalizeCustomMetricCatalog(JSON.parse(JSON.stringify(catalog)) as unknown);
+}
+
+function parseCustomCatalog(value: string): { catalog: CustomMetricCatalogDefinition | null; issues: string[] } {
+  const trimmed = value.trim();
+  let parsedValue: unknown;
+
+  if (!trimmed) {
+    parsedValue = createEmptyCustomMetricCatalog();
+  } else {
+    try {
+      parsedValue = JSON.parse(trimmed);
+    } catch {
+      return {
+        catalog: null,
+        issues: ["Custom catalog JSON must be valid JSON."],
+      };
+    }
+  }
+
+  const catalog = normalizeCustomMetricCatalog(parsedValue);
+  const issues = customMetricCatalogIssues(catalog);
+  return {
+    catalog: issues.length === 0 ? catalog : null,
+    issues,
+  };
 }
 
 function hourLabel(hour: number): string {
@@ -231,6 +275,209 @@ export class MetricsSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
             this.plugin.refreshOpenMetricsViews();
           });
+      });
+
+    new Setting(containerEl).setName("Metric catalog").setHeading();
+
+    const catalogStatusEl = containerEl.createDiv({ cls: "metrics-lens-settings-status" });
+    catalogStatusEl.setAttribute("aria-live", "polite");
+    catalogStatusEl.setAttribute("role", "status");
+
+    const setCatalogStatus = (message: string, isError: boolean): void => {
+      catalogStatusEl.setText(message);
+      catalogStatusEl.toggleClass("is-error", isError);
+    };
+
+    const initialCatalogIssues = customMetricCatalogIssues(this.plugin.settings.customCatalog);
+    setCatalogStatus(
+      initialCatalogIssues.length > 0
+        ? initialCatalogIssues.join(" ")
+        : "Custom catalog JSON is valid.",
+      initialCatalogIssues.length > 0,
+    );
+
+    const refreshSettings = (): void => {
+      this.display();
+    };
+
+    const saveCatalog = async (catalog: CustomMetricCatalogDefinition): Promise<boolean> => {
+      const issues = customMetricCatalogIssues(catalog);
+      if (issues.length > 0) {
+        setCatalogStatus(issues.join(" "), true);
+        return false;
+      }
+
+      this.plugin.settings.customCatalog = catalog;
+      await this.plugin.saveSettings();
+      this.plugin.refreshOpenMetricsViews();
+      setCatalogStatus("Custom catalog JSON is valid.", false);
+      return true;
+    };
+
+    const metricKeys = Object.keys(this.plugin.settings.customCatalog.metrics).sort((left, right) =>
+      left.localeCompare(right),
+    );
+    const metricsCatalogSection = containerEl.createDiv({ cls: "metrics-lens-settings-catalog-section" });
+    new Setting(metricsCatalogSection)
+      .setName("Custom metrics")
+      .setDesc("Add labels, units, default units, decimals, and icons for custom metric keys.")
+      .setHeading()
+      .addButton((button) => {
+        button.setButtonText("Add metric");
+        button.buttonEl.type = "button";
+        button.onClick(() => {
+          this.plugin.openMetricCatalogMetricEditor({ onSaved: refreshSettings });
+        });
+      });
+
+    if (metricKeys.length === 0) {
+      metricsCatalogSection.createDiv({
+        cls: "metrics-lens-settings-empty",
+        text: "No custom metrics yet.",
+      });
+    }
+
+    metricKeys.forEach((key) => {
+      const metric = this.plugin.settings.customCatalog.metrics[key];
+      const units = metric.allowedUnits?.join(", ") ?? "No units";
+      new Setting(metricsCatalogSection)
+        .setName(metric.label ?? displayMetricName(key, this.plugin.settings.metricNameDisplayMode))
+        .setDesc(`${key} · ${units}`)
+        .setClass("metrics-lens-settings-catalog-row")
+        .addButton((button) => {
+          button.setButtonText("Edit");
+          button.buttonEl.type = "button";
+          button.onClick(() => {
+            this.plugin.openMetricCatalogMetricEditor({
+              initialKey: key,
+              onSaved: refreshSettings,
+            });
+          });
+        })
+        .addButton((button) => {
+          button.setButtonText("Remove");
+          button.buttonEl.type = "button";
+          button.onClick(async () => {
+            const nextCatalog = cloneCustomCatalog(this.plugin.settings.customCatalog);
+            delete nextCatalog.metrics[key];
+            if (await saveCatalog(nextCatalog)) {
+              refreshSettings();
+            }
+          });
+        });
+    });
+
+    const unitKeys = Object.keys(this.plugin.settings.customCatalog.units).sort((left, right) =>
+      left.localeCompare(right),
+    );
+    const unitsCatalogSection = containerEl.createDiv({ cls: "metrics-lens-settings-catalog-section" });
+    new Setting(unitsCatalogSection)
+      .setName("Custom units")
+      .setDesc("Add labels, display text, aliases, decimal places, and duration formatting.")
+      .setHeading()
+      .addButton((button) => {
+        button.setButtonText("Add unit");
+        button.buttonEl.type = "button";
+        button.onClick(() => {
+          this.plugin.openMetricCatalogUnitEditor({ onSaved: refreshSettings });
+        });
+      });
+
+    if (unitKeys.length === 0) {
+      unitsCatalogSection.createDiv({
+        cls: "metrics-lens-settings-empty",
+        text: "No custom units yet.",
+      });
+    }
+
+    unitKeys.forEach((key) => {
+      const unit = this.plugin.settings.customCatalog.units[key];
+      const aliases = unit.aliases && unit.aliases.length > 0 ? ` · Aliases: ${unit.aliases.join(", ")}` : "";
+      new Setting(unitsCatalogSection)
+        .setName(unit.label ?? displayMetricUnitOption(key))
+        .setDesc(`${key}${aliases}`)
+        .setClass("metrics-lens-settings-catalog-row")
+        .addButton((button) => {
+          button.setButtonText("Edit");
+          button.buttonEl.type = "button";
+          button.onClick(() => {
+            this.plugin.openMetricCatalogUnitEditor({
+              initialUnit: key,
+              onSaved: refreshSettings,
+            });
+          });
+        })
+        .addButton((button) => {
+          button.setButtonText("Remove");
+          button.buttonEl.type = "button";
+          button.onClick(async () => {
+            const nextCatalog = cloneCustomCatalog(this.plugin.settings.customCatalog);
+            delete nextCatalog.units[key];
+            if (await saveCatalog(nextCatalog)) {
+              refreshSettings();
+            }
+          });
+        });
+    });
+
+    const advancedCatalogEl = containerEl.createEl("details", {
+      cls: "metrics-lens-settings-catalog-json",
+    });
+    advancedCatalogEl.createEl("summary", { text: "Advanced catalog JSON" });
+
+    let catalogValue = formatCustomCatalog(this.plugin.settings.customCatalog);
+    let catalogTextAreaEl: HTMLTextAreaElement | null = null;
+
+    new Setting(advancedCatalogEl)
+      .setName("Custom catalog JSON")
+      .setDesc("Direct editor for the custom catalog stored in this plugin's settings.")
+      .setClass("metrics-lens-settings-catalog")
+      .addTextArea((textArea) => {
+        catalogTextAreaEl = textArea.inputEl;
+        textArea.setValue(catalogValue);
+        textArea.inputEl.rows = 14;
+        textArea.inputEl.spellcheck = false;
+        textArea.onChange((value) => {
+          catalogValue = value;
+        });
+      })
+      .addButton((button) => {
+        button.setButtonText("Save catalog");
+        button.buttonEl.type = "button";
+        button.onClick(async () => {
+          const result = parseCustomCatalog(catalogValue);
+          if (!result.catalog) {
+            setCatalogStatus(result.issues.join(" "), true);
+            catalogTextAreaEl?.focus();
+            return;
+          }
+
+          if (!(await saveCatalog(result.catalog))) {
+            return;
+          }
+
+          catalogValue = formatCustomCatalog(result.catalog);
+          if (catalogTextAreaEl) {
+            catalogTextAreaEl.value = catalogValue;
+          }
+          refreshSettings();
+        });
+      })
+      .addButton((button) => {
+        button.setButtonText("Reset");
+        button.buttonEl.type = "button";
+        button.onClick(async () => {
+          const emptyCatalog = createEmptyCustomMetricCatalog();
+          this.plugin.settings.customCatalog = emptyCatalog;
+          catalogValue = formatCustomCatalog(emptyCatalog);
+          if (catalogTextAreaEl) {
+            catalogTextAreaEl.value = catalogValue;
+            catalogTextAreaEl.focus();
+          }
+          if (await saveCatalog(emptyCatalog)) {
+            refreshSettings();
+          }
+        });
       });
   }
 }

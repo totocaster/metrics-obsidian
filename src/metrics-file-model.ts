@@ -16,6 +16,7 @@ export interface MetricIssue {
   field?: string;
   message: string;
   severity: MetricIssueSeverity;
+  value?: string;
 }
 
 export interface ParsedMetricRow {
@@ -32,6 +33,7 @@ export interface MetricIssueSummary {
   count: number;
   message: string;
   severity: MetricIssueSeverity;
+  value?: string;
 }
 
 export interface MetricsFileAnalysis {
@@ -155,6 +157,7 @@ function validateObjectShape(row: ParsedMetricRow, parsed: Record<string, unknow
         field: "key",
         message: `Unknown metric key \`${key}\`.`,
         severity: "warning",
+        value: key,
       });
     }
   }
@@ -227,6 +230,7 @@ function validateObjectShape(row: ParsedMetricRow, parsed: Record<string, unknow
           field: "unit",
           message: `Unknown unit \`${unit}\`.`,
           severity: "warning",
+          value: unit,
         });
       } else {
         const keyValue = typeof row.metric?.key === "string" ? row.metric.key : null;
@@ -457,12 +461,13 @@ export function analyzeMetricsData(data: string): MetricsFileAnalysis {
         return;
       }
 
-      issueSummaryMap.set(summaryKey, {
-        code: issue.code,
-        count: 1,
-        message: issue.message,
-        severity: issue.severity,
-      });
+        issueSummaryMap.set(summaryKey, {
+          code: issue.code,
+          count: 1,
+          message: issue.message,
+          severity: issue.severity,
+          value: issue.value,
+        });
     });
   });
 

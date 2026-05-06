@@ -376,11 +376,87 @@
   min-height: 44px;
 }
 
+.metrics-lens-settings-status {
+  margin: var(--size-2-2) 0 var(--size-4-2);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  line-height: var(--line-height-tight);
+}
+
+.metrics-lens-settings-status.is-error {
+  color: var(--text-error);
+}
+
+.metrics-lens-settings-catalog-section {
+  margin-top: var(--size-4-4);
+  padding-top: var(--size-4-2);
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.metrics-lens-settings-catalog-section .setting-item-heading {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.metrics-lens-settings-empty {
+  margin: var(--size-2-2) 0 var(--size-4-3);
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+.metrics-lens-settings-catalog-row.setting-item {
+  padding-top: var(--size-2-3);
+  padding-bottom: var(--size-2-3);
+}
+
+.metrics-lens-settings-catalog-json {
+  margin-top: var(--size-4-4);
+}
+
+.metrics-lens-settings-catalog-json > summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.metrics-lens-settings-catalog .setting-item-control {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.metrics-lens-settings-catalog textarea {
+  width: min(100%, 680px);
+  min-height: 260px;
+  font-family: var(--font-monospace);
+  resize: vertical;
+}
+
 .metrics-lens-actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--size-4-2);
+}
+
+.metrics-lens-catalog-modal-dialog {
+  width: min(880px, calc(100vw - var(--size-4-8)));
+  max-width: calc(100vw - var(--size-4-8));
+}
+
+.metrics-lens-catalog-modal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-4);
+}
+
+.metrics-lens-catalog-modal > h2 {
+  margin-bottom: 0;
+}
+
+.metrics-lens-catalog-modal-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--size-4-2) var(--size-4-3);
 }
 
 .metrics-lens-record-modal-dialog {
@@ -463,6 +539,7 @@
 }
 
 @media (max-width: 640px) {
+  .metrics-lens-catalog-modal-grid,
   .metrics-lens-record-modal-grid {
     grid-template-columns: minmax(0, 1fr);
   }

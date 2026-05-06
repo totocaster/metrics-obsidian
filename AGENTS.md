@@ -56,12 +56,14 @@ Contract rules:
 - `src/metrics-file-model.ts`: NDJSON parsing and validation
 - `src/metrics-file-mutation.ts`: append, update, delete, and missing-id assignment
 - `src/metric-record-modal.ts`: create and edit record modal
+- `src/metric-catalog-editor-modal.ts`: custom metric and unit catalog editor modals
 - `src/metrics-file-modal.ts`: create and rename file modal
 - `src/metrics-search-modal.ts`: command-palette search across metrics files
 - `src/chart-model.ts`: chart data derivation from visible rows
 - `src/chart-renderer.ts`: native SVG chart rendering
-- `src/metric-catalog.json`: first-party metric and unit catalog
-- `src/settings.ts`: plugin settings persistence
+- `src/metric-catalog.json`: first-party metric and unit catalog defaults
+- `src/metric-catalog.ts`: catalog normalization, custom catalog merge, validation helpers, labels, and unit formatting
+- `src/settings.ts`: plugin settings persistence and custom catalog JSON editor
 - `src/time-boundaries.ts`: vault-level time boundary settings and temporal bucket helpers
 - `src/view-state.ts`: per-file persisted view state
 - `styles.css`: scoped plugin styling
