@@ -1,0 +1,97 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate release version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TAG_NAME="${GITHUB_REF_NAME}"
+          if [[ ! "${TAG_NAME}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tags must be bare semantic versions such as 0.6.0. Do not use a v prefix for Obsidian releases." >&2
+            exit 1
+          fi
+
+          MANIFEST_VERSION="$(node -p "require('./manifest.json').version")"
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          MIN_APP_VERSION="$(node -p "require('./manifest.json').minAppVersion")"
+
+          if [[ "${TAG_NAME}" != "${MANIFEST_VERSION}" ]]; then
+            echo "Tag ${TAG_NAME} does not match manifest.json version ${MANIFEST_VERSION}." >&2
+            exit 1
+          fi
+
+          if [[ "${PACKAGE_VERSION}" != "${MANIFEST_VERSION}" ]]; then
+            echo "package.json version ${PACKAGE_VERSION} does not match manifest.json version ${MANIFEST_VERSION}." >&2
+            exit 1
+          fi
+
+          VERSIONS_MIN_APP="$(node -e "const fs = require('fs'); const version = process.argv[1]; if (!fs.existsSync('versions.json')) process.exit(0); const versions = require('./versions.json'); if (Object.prototype.hasOwnProperty.call(versions, version)) console.log(versions[version]);" "${TAG_NAME}")"
+          if [[ -n "${VERSIONS_MIN_APP}" && "${VERSIONS_MIN_APP}" != "${MIN_APP_VERSION}" ]]; then
+            echo "versions.json maps ${TAG_NAME} to Obsidian ${VERSIONS_MIN_APP}, but manifest.json minAppVersion is ${MIN_APP_VERSION}." >&2
+            exit 1
+          fi
+
+          echo "version=${TAG_NAME}" >> "${GITHUB_OUTPUT}"
+
+      - name: Type-check
+        run: npm run check
+
+      - name: Build production bundle
+        run: npm run build
+
+      - name: Verify release assets
+        run: |
+          set -euo pipefail
+          test -s main.js
+          test -s manifest.json
+          test -s styles.css
+
+      - name: Write release notes
+        run: |
+          set -euo pipefail
+          ./scripts/write-release-notes.sh release-notes.md "${{ steps.version.outputs.version }}"
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release-notes.md
+          files: |
+            main.js
+            manifest.json
+            styles.css
+          name: ${{ steps.version.outputs.version }}
+          tag_name: ${{ github.ref_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

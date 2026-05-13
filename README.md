@@ -204,6 +204,25 @@ For local vault development, place the built plugin in:
 .obsidian/plugins/metrics-lens
 ```
 
+## Release process
+
+Releases are published by GitHub Actions when you push a bare semantic version tag that matches `manifest.json`.
+
+```bash
+npm run check
+npm run build
+git tag 0.6.0 # replace with the manifest version
+git push origin 0.6.0
+```
+
+Do not use a `v` prefix. Obsidian requires the GitHub Release tag to exactly match the version in `manifest.json`.
+
+The release workflow validates the tag, `manifest.json`, and `package.json`, builds the production bundle, writes categorized release notes from conventional commit messages, and uploads the Obsidian release assets:
+
+- `manifest.json`
+- `main.js`
+- `styles.css`
+
 ## License
 
 [MIT](./LICENSE)

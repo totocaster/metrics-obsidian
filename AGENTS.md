@@ -95,6 +95,12 @@ npm run build
 npm run check
 ```
 
+Release workflow:
+
+- update `manifest.json` and `package.json` for each release; update `versions.json` when the minimum Obsidian version changes or an explicit compatibility entry is needed
+- use bare semantic version tags such as `0.6.0`, not `v0.6.0`
+- pushing a release tag triggers GitHub Actions to run checks, build `main.js`, generate release notes, and upload `manifest.json`, `main.js`, and `styles.css`
+
 Expected workflow:
 
 1. Run `npm run dev`.
