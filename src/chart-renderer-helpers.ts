@@ -1,6 +1,5 @@
 import type {
   MetricsChartBucket,
-  MetricsChartModel,
   MetricsChartPanel,
   MetricsChartSeries,
   MetricsChartStackSegment,
@@ -57,10 +56,11 @@ export interface XAxisLabelLayout {
 }
 
 function createSvgEl<K extends keyof SVGElementTagNameMap>(
+  svg: SVGSVGElement,
   tagName: K,
   attributes?: Record<string, number | string>,
 ): SVGElementTagNameMap[K] {
-  const element = document.createElementNS(SVG_NS, tagName);
+  const element = svg.ownerDocument.createElementNS(SVG_NS, tagName);
   if (attributes) {
     Object.entries(attributes).forEach(([name, value]) => {
       element.setAttribute(name, String(value));
@@ -355,7 +355,7 @@ export function appendYAxis(
     }
 
     svg.appendChild(
-      createSvgEl("line", {
+      createSvgEl(svg, "line", {
         class: [
           "metrics-lens-chart-grid",
           isMinor ? "is-minor" : "",
@@ -370,7 +370,7 @@ export function appendYAxis(
       }),
     );
 
-    const label = createSvgEl("text", {
+    const label = createSvgEl(svg, "text", {
       class: ["metrics-lens-chart-axis-label", isMinor ? "is-minor" : ""]
         .filter((entry) => entry.length > 0)
         .join(" "),
@@ -388,7 +388,7 @@ export function appendYAxis(
   const zeroY = yForValue(baselineValue);
   if (!baselineRendered) {
     svg.appendChild(
-      createSvgEl("line", {
+      createSvgEl(svg, "line", {
         class: "metrics-lens-chart-baseline",
         x1: PLOT_LEFT,
         x2: PLOT_LEFT + plotWidth,
@@ -415,7 +415,7 @@ export function appendBarChartGuideOverlay(
     }
     const isBaseline = nearlyEqual(value, baselineValue);
     svg.appendChild(
-      createSvgEl("line", {
+      createSvgEl(svg, "line", {
         class: [
           "metrics-lens-chart-grid",
           "is-overlay",
@@ -439,7 +439,7 @@ export function appendXAxisLabels(
 ): void {
   layout.labels.forEach(({ bucket, x }) => {
     const y = CHART_HEIGHT - 10;
-    const label = createSvgEl("text", {
+    const label = createSvgEl(svg, "text", {
       class: ["metrics-lens-chart-axis-label", "is-bottom"].join(" "),
       x,
       y,
@@ -624,7 +624,7 @@ export function attachHoverTargets(
   }
 
   const tooltipEl = panelEl.createDiv({ cls: "metrics-lens-chart-tooltip" });
-  const crosshair = createSvgEl("line", {
+  const crosshair = createSvgEl(svg, "line", {
     class: "metrics-lens-chart-crosshair",
     x1: 0,
     x2: 0,
@@ -633,7 +633,7 @@ export function attachHoverTargets(
   });
   svg.appendChild(crosshair);
 
-  const overlay = createSvgEl("g");
+  const overlay = createSvgEl(svg, "g");
 
   const showTarget = (target: HoverTarget): void => {
     crosshair.setAttribute("x1", String(target.x));
@@ -660,7 +660,7 @@ export function attachHoverTargets(
   };
 
   targets.forEach((target) => {
-    const region = createSvgEl("rect", {
+    const region = createSvgEl(svg, "rect", {
       class: "metrics-lens-chart-hover-region",
       height: CHART_HEIGHT - PLOT_BOTTOM - PLOT_TOP,
       width: target.xEnd - target.xStart,

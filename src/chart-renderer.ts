@@ -17,7 +17,13 @@ import {
 
 const CHART_WIDTH = 640;
 const PLOT_LEFT = 40;
-const PLOT_RIGHT = 12;
+
+function createSvgEl<K extends keyof SVGElementTagNameMap>(
+  svg: SVGSVGElement,
+  tagName: K,
+): SVGElementTagNameMap[K] {
+  return svg.ownerDocument.createElementNS("http://www.w3.org/2000/svg", tagName);
+}
 
 function renderLineChart(
   svg: SVGSVGElement,
@@ -52,7 +58,7 @@ function renderLineChart(
       .join(" ");
 
     if (pathData.length > 0) {
-      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      const path = createSvgEl(svg, "path");
       path.setAttribute("class", `metrics-lens-chart-line metrics-lens-chart-series-${index % 6}`);
       path.setAttribute("d", pathData);
       svg.appendChild(path);
@@ -62,7 +68,7 @@ function renderLineChart(
       if (point.timestamp === null) {
         return;
       }
-      const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      const circle = createSvgEl(svg, "circle");
       circle.setAttribute("class", `metrics-lens-chart-point metrics-lens-chart-series-${index % 6}`);
       circle.setAttribute("cx", String(xForTimestamp(point.timestamp)));
       circle.setAttribute("cy", String(yForValue(point.value)));
@@ -109,7 +115,7 @@ function renderBarChart(
 
         const startY = yForValue(startValue);
         const endY = yForValue(endValue);
-        const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        const rect = createSvgEl(svg, "rect");
         rect.setAttribute("class", `metrics-lens-chart-bar is-stacked ${colorClasses.get(segment.key) ?? "metrics-lens-chart-series-0"}`);
         rect.setAttribute("height", String(Math.abs(startY - endY)));
         rect.setAttribute("rx", "2");
@@ -129,7 +135,7 @@ function renderBarChart(
       }
 
       const y = yForValue(point.value);
-      const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      const rect = createSvgEl(svg, "rect");
       rect.setAttribute("class", `metrics-lens-chart-bar metrics-lens-chart-series-${seriesIndex % 6}`);
       rect.setAttribute("height", String(Math.abs(zeroY - y)));
       rect.setAttribute("rx", "2");
@@ -177,7 +183,7 @@ function renderPanel(
     existingSvg?.remove();
     existingTooltip?.remove();
 
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    const svg = panelEl.ownerDocument.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("class", "metrics-lens-chart-svg");
     svg.setAttribute("viewBox", `0 0 ${CHART_WIDTH} 248`);
     svg.setAttribute("aria-label", "Metrics chart");

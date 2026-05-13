@@ -319,7 +319,7 @@ export class MetricsSettingTab extends PluginSettingTab {
     );
     const metricsCatalogSection = containerEl.createDiv({ cls: "metrics-lens-settings-catalog-section" });
     new Setting(metricsCatalogSection)
-      .setName("Custom metrics")
+      .setName("Custom metric keys")
       .setDesc("Add labels, units, default units, decimals, and icons for custom metric keys.")
       .setHeading()
       .addButton((button) => {

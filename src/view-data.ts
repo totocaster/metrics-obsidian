@@ -11,7 +11,6 @@ import {
 import {
   formatMetricDisplayValue,
   rawValuePrecision,
-  resolveMetricFractionDigits,
 } from "./metric-value-format";
 import {
   rowDateValue,

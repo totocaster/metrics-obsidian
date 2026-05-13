@@ -182,7 +182,7 @@ export class MetricRecordModal extends Modal {
       inputEl.addEventListener("input", () => {
         onChange(inputEl.value);
         if (statusEl.innerText.length > 0) {
-          clearFieldState(inputEl.closest(".setting-item") as HTMLElement | null, inputEl);
+          clearFieldState(inputEl.closest<HTMLElement>(".setting-item"), inputEl);
         }
       });
 
@@ -204,7 +204,7 @@ export class MetricRecordModal extends Modal {
       inputEl.addEventListener("input", () => {
         onChange(inputEl.value);
         if (statusEl.innerText.length > 0) {
-          clearFieldState(inputEl.closest(".setting-item") as HTMLElement | null, inputEl);
+          clearFieldState(inputEl.closest<HTMLElement>(".setting-item"), inputEl);
         }
       });
 

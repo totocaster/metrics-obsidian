@@ -197,7 +197,7 @@ function collectStackedValueRange(stackSegments: Map<string, MetricsChartStackSe
 } | null {
   const totals = new Map<string, { negative: number; positive: number }>();
 
-  stackSegments.forEach((segments, bucketKey) => {
+  stackSegments.forEach((segments) => {
     segments.forEach((point) => {
       const current = totals.get(point.bucketKey) ?? { negative: 0, positive: 0 };
       if (point.value >= 0) {

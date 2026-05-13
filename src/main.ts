@@ -1,5 +1,6 @@
 import {
   FileView,
+  Modal,
   Notice,
   Plugin,
   TFile,
@@ -119,6 +120,48 @@ function buildMetricsSearchResult(
   };
 }
 
+class ConfirmDeleteMetricRecordModal extends Modal {
+  constructor(
+    plugin: MetricsPlugin,
+    private readonly file: TFile,
+    private readonly record: MetricRecord,
+  ) {
+    super(plugin.app);
+    this.onConfirm = () => {
+      void plugin.deleteRecord(this.file, this.record.id);
+    };
+  }
+
+  private readonly onConfirm: () => void;
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+
+    contentEl.createEl("h2", { text: "Delete record" });
+    contentEl.createEl("p", {
+      text: `Delete ${this.record.key} (${this.record.id}) from ${this.file.name}?`,
+    });
+
+    const actions = contentEl.createDiv({ cls: "metrics-lens-actions" });
+    const cancelButton = actions.createEl("button", { text: "Cancel" });
+    cancelButton.type = "button";
+    cancelButton.addEventListener("click", () => {
+      this.close();
+    });
+
+    const deleteButton = actions.createEl("button", {
+      cls: "mod-warning",
+      text: "Delete",
+    });
+    deleteButton.type = "button";
+    deleteButton.addEventListener("click", () => {
+      this.onConfirm();
+      this.close();
+    });
+  }
+}
+
 export default class MetricsPlugin extends Plugin {
   settings: MetricsPluginSettings = DEFAULT_SETTINGS;
   private readonly suppressedAutoOpenPaths = new Set<string>();
@@ -141,7 +184,7 @@ export default class MetricsPlugin extends Plugin {
 
     this.addCommand({
       id: "open-current-file",
-      name: "Open current metrics file",
+      name: "Open current file",
       checkCallback: (checking) => {
         const file = this.app.workspace.getActiveFile();
         if (!file || !this.isMetricsFile(file)) {
@@ -149,7 +192,7 @@ export default class MetricsPlugin extends Plugin {
         }
 
         if (!checking) {
-          void this.openMetricsFile(file, this.app.workspace.activeLeaf);
+          void this.openMetricsFile(file, this.navigationLeaf());
         }
 
         return true;
@@ -158,7 +201,7 @@ export default class MetricsPlugin extends Plugin {
 
     this.addCommand({
       id: "assign-missing-ids-current-file",
-      name: "Assign missing ids in current metrics file",
+      name: "Assign missing ids in current file",
       checkCallback: (checking) => {
         const file = this.app.workspace.getActiveFile();
         if (!file || !this.isMetricsFile(file)) {
@@ -175,7 +218,7 @@ export default class MetricsPlugin extends Plugin {
 
     this.addCommand({
       id: "add-record-current-file",
-      name: "Add record to current metrics file",
+      name: "Add record to current file",
       checkCallback: (checking) => {
         const file = this.app.workspace.getActiveFile();
         if (!file || !this.isMetricsFile(file)) {
@@ -192,7 +235,7 @@ export default class MetricsPlugin extends Plugin {
 
     this.addCommand({
       id: "search",
-      name: "Search metrics",
+      name: "Search",
       callback: () => {
         void this.openMetricsSearchModal();
       },
@@ -200,7 +243,7 @@ export default class MetricsPlugin extends Plugin {
 
     this.addCommand({
       id: "new-file",
-      name: "New metrics file",
+      name: "New file",
       callback: () => {
         this.openCreateMetricsFileModal();
       },
@@ -208,7 +251,7 @@ export default class MetricsPlugin extends Plugin {
 
     this.addCommand({
       id: "rename-current-file",
-      name: "Rename current metrics file",
+      name: "Rename current file",
       checkCallback: (checking) => {
         const file = this.app.workspace.getActiveFile();
         if (!file || !this.isMetricsFile(file)) {
@@ -225,7 +268,7 @@ export default class MetricsPlugin extends Plugin {
 
     this.addCommand({
       id: "delete-current-file",
-      name: "Delete current metrics file",
+      name: "Delete current file",
       checkCallback: (checking) => {
         const file = this.app.workspace.getActiveFile();
         if (!file || !this.isMetricsFile(file)) {
@@ -242,9 +285,9 @@ export default class MetricsPlugin extends Plugin {
 
     this.addCommand({
       id: "open-view",
-      name: "Open metrics view",
-      callback: async () => {
-        await this.activateView();
+      name: "Open view",
+      callback: () => {
+        void this.activateView();
       },
     });
 
@@ -266,7 +309,7 @@ export default class MetricsPlugin extends Plugin {
     this.registerEvent(
       this.app.workspace.on("layout-change", () => {
         const file = this.app.workspace.getActiveFile();
-        this.queueAutoOpen(file, this.app.workspace.activeLeaf);
+        this.queueAutoOpen(file, this.activeFileLeaf());
         this.refreshFileExplorerObservers();
         this.queueFileExplorerLabelSync();
       }),
@@ -326,21 +369,24 @@ export default class MetricsPlugin extends Plugin {
 
     this.app.workspace.onLayoutReady(() => {
       const activeFile = this.app.workspace.getActiveFile();
-      this.queueAutoOpen(activeFile, this.app.workspace.activeLeaf);
+      this.queueAutoOpen(activeFile, this.activeFileLeaf());
       this.refreshFileExplorerObservers();
       this.queueFileExplorerLabelSync();
     });
   }
 
-  async onunload(): Promise<void> {
+  onunload(): void {
     if (this.persistViewStateTimer !== null) {
       window.clearTimeout(this.persistViewStateTimer);
       this.persistViewStateTimer = null;
-      await this.saveSettings();
+      void this.saveSettings();
     }
 
     this.fileExplorerRelabelController.disconnect();
+    void this.restoreMetricsLeavesOnUnload();
+  }
 
+  private async restoreMetricsLeavesOnUnload(): Promise<void> {
     for (const leaf of this.app.workspace.getLeavesOfType(METRICS_VIEW_TYPE)) {
       const view = leaf.view;
       if (!(view instanceof MetricsFileView) || !view.file) {
@@ -465,7 +511,7 @@ export default class MetricsPlugin extends Plugin {
   async activateView(): Promise<void> {
     const activeFile = this.app.workspace.getActiveFile();
     if (activeFile && this.isMetricsFile(activeFile)) {
-      await this.openMetricsFile(activeFile, this.app.workspace.activeLeaf);
+      await this.openMetricsFile(activeFile, this.navigationLeaf());
       return;
     }
 
@@ -481,7 +527,7 @@ export default class MetricsPlugin extends Plugin {
       active: true,
     });
 
-    this.app.workspace.revealLeaf(leaf);
+    await this.app.workspace.revealLeaf(leaf);
   }
 
   refreshOpenMetricsViews(filePaths?: readonly string[]): void {
@@ -686,11 +732,7 @@ export default class MetricsPlugin extends Plugin {
   }
 
   confirmDeleteRecord(file: TFile, record: MetricRecord): void {
-    if (!window.confirm(`Delete ${record.key} (${record.id}) from ${file.name}?`)) {
-      return;
-    }
-
-    void this.deleteRecord(file, record.id);
+    new ConfirmDeleteMetricRecordModal(this, file, record).open();
   }
 
   async createMetricsFile(input: string): Promise<void> {
@@ -708,7 +750,7 @@ export default class MetricsPlugin extends Plugin {
       const targetLeaf =
         this.app.workspace.getLeavesOfType(METRICS_VIEW_TYPE)[0] ??
         this.app.workspace.getRightLeaf(false) ??
-        this.app.workspace.activeLeaf;
+        this.app.workspace.getLeaf(false);
       await this.openMetricsFile(
         file,
         targetLeaf,
@@ -745,17 +787,21 @@ export default class MetricsPlugin extends Plugin {
   }
 
   confirmDeleteMetricsFile(file: TFile): void {
-    if (!window.confirm(`Delete ${file.name}?`)) {
+    void this.confirmAndDeleteMetricsFile(file);
+  }
+
+  private async confirmAndDeleteMetricsFile(file: TFile): Promise<void> {
+    if (!(await this.app.fileManager.promptForDeletion(file))) {
       return;
     }
 
-    void this.deleteMetricsFile(file);
+    await this.deleteMetricsFile(file);
   }
 
   async deleteMetricsFile(file: TFile): Promise<void> {
     try {
       const path = file.path;
-      await this.app.vault.trash(file, true);
+      await this.app.fileManager.trashFile(file);
       this.forgetPersistedViewStateForPath(path);
       await this.resetDeletedMetricsLeaves(path);
       new Notice(`Deleted ${path}.`);
@@ -793,7 +839,7 @@ export default class MetricsPlugin extends Plugin {
       }
     }
 
-    this.app.workspace.revealLeaf(leaf);
+    await this.app.workspace.revealLeaf(leaf);
   }
 
   private handleMutationError(error: unknown): void {
@@ -876,15 +922,6 @@ export default class MetricsPlugin extends Plugin {
     return relativePath;
   }
 
-  private relativeMetricsFolderPath(path: string): string {
-    const relativePath = this.relativeMetricsPath(path);
-    const separatorIndex = relativePath.lastIndexOf("/");
-    if (separatorIndex === -1) {
-      return "";
-    }
-    return relativePath.slice(0, separatorIndex + 1);
-  }
-
   private async ensureParentFolder(path: string): Promise<void> {
     const parentPath = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
     if (parentPath.length === 0) {
@@ -920,6 +957,7 @@ export default class MetricsPlugin extends Plugin {
   }
 
   private async resetDeletedMetricsLeaves(path: string): Promise<void> {
+    const activeLeaf = this.activeFileLeaf();
     const leaves = this.app.workspace.getLeavesOfType(METRICS_VIEW_TYPE);
     for (const leaf of leaves) {
       const view = leaf.view;
@@ -928,7 +966,7 @@ export default class MetricsPlugin extends Plugin {
       }
 
       await leaf.setViewState({
-        active: leaf === this.app.workspace.activeLeaf,
+        active: leaf === activeLeaf,
         type: METRICS_VIEW_TYPE,
       });
     }
@@ -1007,7 +1045,7 @@ export default class MetricsPlugin extends Plugin {
       return existingMetricsLeaf;
     }
 
-    return this.app.workspace.getRightLeaf(false) ?? this.app.workspace.activeLeaf;
+    return this.app.workspace.getRightLeaf(false) ?? this.app.workspace.getLeaf(false);
   }
 
   private async maybeAutoOpenFile(file: TFile | null, leaf: WorkspaceLeaf | null): Promise<void> {
@@ -1020,7 +1058,7 @@ export default class MetricsPlugin extends Plugin {
       return;
     }
 
-    const targetLeaf = leaf ?? this.findLeafShowingFile(file) ?? this.app.workspace.activeLeaf;
+    const targetLeaf = leaf ?? this.findLeafShowingFile(file) ?? this.activeFileLeaf();
     if (!targetLeaf || targetLeaf.view.getViewType() === METRICS_VIEW_TYPE) {
       return;
     }
@@ -1064,6 +1102,14 @@ export default class MetricsPlugin extends Plugin {
     return leaf.view instanceof FileView ? leaf.view.file ?? null : null;
   }
 
+  private activeFileLeaf(): WorkspaceLeaf | null {
+    return this.app.workspace.getActiveViewOfType(FileView)?.leaf ?? null;
+  }
+
+  private navigationLeaf(): WorkspaceLeaf {
+    return this.activeFileLeaf() ?? this.app.workspace.getLeaf(false);
+  }
+
   private refreshMetricsViewsForVaultChange(change: MetricsVaultChange): void {
     const openMetricsViewPaths = collectOpenMetricsViewPaths(
       this.app.workspace.getLeavesOfType(METRICS_VIEW_TYPE),
@@ -1082,7 +1128,7 @@ export default class MetricsPlugin extends Plugin {
 
   private refreshFileExplorerObservers(): void {
     this.fileExplorerRelabelController.observeRoots(
-      document.querySelectorAll<HTMLElement>(".nav-files-container"),
+      activeDocument.querySelectorAll<HTMLElement>(".nav-files-container"),
     );
   }
 

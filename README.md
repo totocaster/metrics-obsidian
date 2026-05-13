@@ -98,14 +98,14 @@ Validation behavior:
 Current command set:
 
 ```text
-Open current metrics file
-Open metrics view
-Search metrics
-Add record to current metrics file
-New metrics file
-Rename current metrics file
-Delete current metrics file
-Assign missing ids in current metrics file
+Open current file
+Open view
+Search
+Add record to current file
+New file
+Rename current file
+Delete current file
+Assign missing ids in current file
 ```
 
 Record-level copy, edit, and delete actions are available from the timeline row menu.
@@ -211,13 +211,13 @@ Releases are published by GitHub Actions when you push a bare semantic version t
 ```bash
 npm run check
 npm run build
-git tag 0.6.0 # replace with the manifest version
-git push origin 0.6.0
+git tag 0.6.1 # replace with the manifest version
+git push origin 0.6.1
 ```
 
 Do not use a `v` prefix. Obsidian requires the GitHub Release tag to exactly match the version in `manifest.json`.
 
-The release workflow validates the tag, `manifest.json`, and `package.json`, builds the production bundle, writes categorized release notes from conventional commit messages, and uploads the Obsidian release assets:
+The release workflow validates the tag, `manifest.json`, and `package.json`, builds the production bundle, generates artifact attestations, writes categorized release notes from conventional commit messages, and uploads the Obsidian release assets:
 
 - `manifest.json`
 - `main.js`

@@ -1,10 +1,9 @@
-import { Menu, Notice, setIcon, TFile, TextFileView, WorkspaceLeaf } from "obsidian";
+import { Menu, Notice, setIcon, TextFileView, WorkspaceLeaf } from "obsidian";
 
 import { buildMetricsChartModel } from "./chart-model";
 import { renderMetricsChart, type MetricsChartSelection } from "./chart-renderer";
 import type MetricsPlugin from "./main";
-import { displayMetricName, displayMetricOption } from "./metric-catalog";
-import { metricIconForKey } from "./metric-icons";
+import { displayMetricOption } from "./metric-catalog";
 import {
   analyzeMetricsData,
   type MetricsFileAnalysis,
@@ -961,7 +960,7 @@ export class MetricsFileView extends TextFileView {
 
     targetEl.focus({ preventScroll: true });
     if (
-      targetEl instanceof HTMLInputElement &&
+      targetEl.instanceOf(HTMLInputElement) &&
       typeof focusState.selectionStart === "number" &&
       typeof focusState.selectionEnd === "number"
     ) {
@@ -1002,7 +1001,7 @@ export class MetricsFileView extends TextFileView {
     name: string,
     element: HTMLInputElement | HTMLSelectElement,
   ): ControlFocusState {
-    if (element instanceof HTMLInputElement) {
+    if (element.instanceOf(HTMLInputElement)) {
       return {
         name,
         selectionEnd: element.selectionEnd ?? undefined,

@@ -17,7 +17,7 @@ function availableIconIds(): Set<string> {
 }
 
 export function metricIconForKey(metricKey: string): IconName | null {
-  const candidates = getMetricIconCandidates(metricKey) as IconName[];
+  const candidates = getMetricIconCandidates(metricKey);
   const available = availableIconIds();
 
   for (const candidate of candidates) {

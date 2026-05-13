@@ -3127,7 +3127,7 @@ var MetricsSettingTab = class extends import_obsidian6.PluginSettingTab {
       (left, right) => left.localeCompare(right)
     );
     const metricsCatalogSection = containerEl.createDiv({ cls: "metrics-lens-settings-catalog-section" });
-    new import_obsidian6.Setting(metricsCatalogSection).setName("Custom metrics").setDesc("Add labels, units, default units, decimals, and icons for custom metric keys.").setHeading().addButton((button) => {
+    new import_obsidian6.Setting(metricsCatalogSection).setName("Custom metric keys").setDesc("Add labels, units, default units, decimals, and icons for custom metric keys.").setHeading().addButton((button) => {
       button.setButtonText("Add metric");
       button.buttonEl.type = "button";
       button.onClick(() => {
@@ -3450,7 +3450,7 @@ function collectValueRange(series) {
 }
 function collectStackedValueRange(stackSegments) {
   const totals = /* @__PURE__ */ new Map();
-  stackSegments.forEach((segments, bucketKey) => {
+  stackSegments.forEach((segments) => {
     segments.forEach((point) => {
       const current = totals.get(point.bucketKey) ?? { negative: 0, positive: 0 };
       if (point.value >= 0) {
@@ -3863,8 +3863,8 @@ var PLOT_LEFT = 40;
 var PLOT_RIGHT = 12;
 var PLOT_TOP = 16;
 var PLOT_BOTTOM = 44;
-function createSvgEl(tagName, attributes) {
-  const element = document.createElementNS(SVG_NS, tagName);
+function createSvgEl(svg, tagName, attributes) {
+  const element = svg.ownerDocument.createElementNS(SVG_NS, tagName);
   if (attributes) {
     Object.entries(attributes).forEach(([name, value]) => {
       element.setAttribute(name, String(value));
@@ -4083,7 +4083,7 @@ function appendYAxis(svg, panel) {
       baselineRendered = true;
     }
     svg.appendChild(
-      createSvgEl("line", {
+      createSvgEl(svg, "line", {
         class: [
           "metrics-lens-chart-grid",
           isMinor ? "is-minor" : "",
@@ -4095,7 +4095,7 @@ function appendYAxis(svg, panel) {
         y2: y
       })
     );
-    const label = createSvgEl("text", {
+    const label = createSvgEl(svg, "text", {
       class: ["metrics-lens-chart-axis-label", isMinor ? "is-minor" : ""].filter((entry) => entry.length > 0).join(" "),
       x: PLOT_LEFT - 8,
       y: y + 4
@@ -4110,7 +4110,7 @@ function appendYAxis(svg, panel) {
   const zeroY = yForValue(baselineValue);
   if (!baselineRendered) {
     svg.appendChild(
-      createSvgEl("line", {
+      createSvgEl(svg, "line", {
         class: "metrics-lens-chart-baseline",
         x1: PLOT_LEFT,
         x2: PLOT_LEFT + plotWidth,
@@ -4129,7 +4129,7 @@ function appendBarChartGuideOverlay(svg, panel, plotWidth, yForValue, baselineVa
     }
     const isBaseline = nearlyEqual(value, baselineValue);
     svg.appendChild(
-      createSvgEl("line", {
+      createSvgEl(svg, "line", {
         class: [
           "metrics-lens-chart-grid",
           "is-overlay",
@@ -4146,7 +4146,7 @@ function appendBarChartGuideOverlay(svg, panel, plotWidth, yForValue, baselineVa
 function appendXAxisLabels(svg, layout, axisKind) {
   layout.labels.forEach(({ bucket, x }) => {
     const y = CHART_HEIGHT - 10;
-    const label = createSvgEl("text", {
+    const label = createSvgEl(svg, "text", {
       class: ["metrics-lens-chart-axis-label", "is-bottom"].join(" "),
       x,
       y
@@ -4284,7 +4284,7 @@ function attachHoverTargets(panelEl, svg, panel, targets, onSelect) {
     return;
   }
   const tooltipEl = panelEl.createDiv({ cls: "metrics-lens-chart-tooltip" });
-  const crosshair = createSvgEl("line", {
+  const crosshair = createSvgEl(svg, "line", {
     class: "metrics-lens-chart-crosshair",
     x1: 0,
     x2: 0,
@@ -4292,7 +4292,7 @@ function attachHoverTargets(panelEl, svg, panel, targets, onSelect) {
     y2: CHART_HEIGHT - PLOT_BOTTOM
   });
   svg.appendChild(crosshair);
-  const overlay = createSvgEl("g");
+  const overlay = createSvgEl(svg, "g");
   const showTarget = (target) => {
     crosshair.setAttribute("x1", String(target.x));
     crosshair.setAttribute("x2", String(target.x));
@@ -4314,7 +4314,7 @@ function attachHoverTargets(panelEl, svg, panel, targets, onSelect) {
     renderTooltip(tooltipEl, panel, null);
   };
   targets.forEach((target) => {
-    const region = createSvgEl("rect", {
+    const region = createSvgEl(svg, "rect", {
       class: "metrics-lens-chart-hover-region",
       height: CHART_HEIGHT - PLOT_BOTTOM - PLOT_TOP,
       width: target.xEnd - target.xStart,
@@ -4455,6 +4455,9 @@ function chartPanelTitle(panel) {
 // src/chart-renderer.ts
 var CHART_WIDTH2 = 640;
 var PLOT_LEFT2 = 40;
+function createSvgEl2(svg, tagName) {
+  return svg.ownerDocument.createElementNS("http://www.w3.org/2000/svg", tagName);
+}
 function renderLineChart(svg, panel, panelWidth, onSelect) {
   const { plotWidth, yForValue } = appendYAxis(svg, panel);
   const timestamps = panel.buckets.map((bucket) => bucket.timestamp).filter((value) => typeof value === "number");
@@ -4474,7 +4477,7 @@ function renderLineChart(svg, panel, panelWidth, onSelect) {
       return `${pointIndex === 0 ? "M" : "L"} ${x} ${y}`;
     }).join(" ");
     if (pathData.length > 0) {
-      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      const path = createSvgEl2(svg, "path");
       path.setAttribute("class", `metrics-lens-chart-line metrics-lens-chart-series-${index % 6}`);
       path.setAttribute("d", pathData);
       svg.appendChild(path);
@@ -4483,7 +4486,7 @@ function renderLineChart(svg, panel, panelWidth, onSelect) {
       if (point.timestamp === null) {
         return;
       }
-      const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      const circle = createSvgEl2(svg, "circle");
       circle.setAttribute("class", `metrics-lens-chart-point metrics-lens-chart-series-${index % 6}`);
       circle.setAttribute("cx", String(xForTimestamp(point.timestamp)));
       circle.setAttribute("cy", String(yForValue(point.value)));
@@ -4520,7 +4523,7 @@ function renderBarChart(svg, panel, panelWidth, onSelect) {
         }
         const startY = yForValue(startValue);
         const endY = yForValue(endValue);
-        const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        const rect = createSvgEl2(svg, "rect");
         rect.setAttribute("class", `metrics-lens-chart-bar is-stacked ${colorClasses.get(segment.key) ?? "metrics-lens-chart-series-0"}`);
         rect.setAttribute("height", String(Math.abs(startY - endY)));
         rect.setAttribute("rx", "2");
@@ -4538,7 +4541,7 @@ function renderBarChart(svg, panel, panelWidth, onSelect) {
         return;
       }
       const y = yForValue(point.value);
-      const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      const rect = createSvgEl2(svg, "rect");
       rect.setAttribute("class", `metrics-lens-chart-bar metrics-lens-chart-series-${seriesIndex % 6}`);
       rect.setAttribute("height", String(Math.abs(zeroY - y)));
       rect.setAttribute("rx", "2");
@@ -4576,7 +4579,7 @@ function renderPanel(container, panel, model, options) {
     const existingTooltip = panelEl.querySelector(".metrics-lens-chart-tooltip");
     existingSvg?.remove();
     existingTooltip?.remove();
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    const svg = panelEl.ownerDocument.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("class", "metrics-lens-chart-svg");
     svg.setAttribute("viewBox", `0 0 ${CHART_WIDTH2} 248`);
     svg.setAttribute("aria-label", "Metrics chart");
@@ -6251,7 +6254,7 @@ var MetricsFileView = class extends import_obsidian9.TextFileView {
       return;
     }
     targetEl.focus({ preventScroll: true });
-    if (targetEl instanceof HTMLInputElement && typeof focusState.selectionStart === "number" && typeof focusState.selectionEnd === "number") {
+    if (targetEl.instanceOf(HTMLInputElement) && typeof focusState.selectionStart === "number" && typeof focusState.selectionEnd === "number") {
       targetEl.setSelectionRange(focusState.selectionStart, focusState.selectionEnd);
     }
   }
@@ -6279,7 +6282,7 @@ var MetricsFileView = class extends import_obsidian9.TextFileView {
     this.searchRenderTimeout = null;
   }
   controlFocusState(name, element) {
-    if (element instanceof HTMLInputElement) {
+    if (element.instanceOf(HTMLInputElement)) {
       return {
         name,
         selectionEnd: element.selectionEnd ?? void 0,
@@ -6349,6 +6352,42 @@ function buildMetricsSearchResult(file, row, metricsRoot, supportedExtensions, m
     tertiaryText: `${displayPath} \xB7 line ${row.lineNumber}`
   };
 }
+var ConfirmDeleteMetricRecordModal = class extends import_obsidian10.Modal {
+  constructor(plugin, file, record) {
+    super(plugin.app);
+    this.file = file;
+    this.record = record;
+    this.onConfirm = () => {
+      void plugin.deleteRecord(this.file, this.record.id);
+    };
+  }
+  file;
+  record;
+  onConfirm;
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h2", { text: "Delete record" });
+    contentEl.createEl("p", {
+      text: `Delete ${this.record.key} (${this.record.id}) from ${this.file.name}?`
+    });
+    const actions = contentEl.createDiv({ cls: "metrics-lens-actions" });
+    const cancelButton = actions.createEl("button", { text: "Cancel" });
+    cancelButton.type = "button";
+    cancelButton.addEventListener("click", () => {
+      this.close();
+    });
+    const deleteButton = actions.createEl("button", {
+      cls: "mod-warning",
+      text: "Delete"
+    });
+    deleteButton.type = "button";
+    deleteButton.addEventListener("click", () => {
+      this.onConfirm();
+      this.close();
+    });
+  }
+};
 var MetricsPlugin = class extends import_obsidian10.Plugin {
   settings = DEFAULT_SETTINGS;
   suppressedAutoOpenPaths = /* @__PURE__ */ new Set();
@@ -6367,21 +6406,21 @@ var MetricsPlugin = class extends import_obsidian10.Plugin {
     this.registerExtensions(this.fileBrowserFallbackExtensions(), "markdown");
     this.addCommand({
       id: "open-current-file",
-      name: "Open current metrics file",
+      name: "Open current file",
       checkCallback: (checking) => {
         const file = this.app.workspace.getActiveFile();
         if (!file || !this.isMetricsFile(file)) {
           return false;
         }
         if (!checking) {
-          void this.openMetricsFile(file, this.app.workspace.activeLeaf);
+          void this.openMetricsFile(file, this.navigationLeaf());
         }
         return true;
       }
     });
     this.addCommand({
       id: "assign-missing-ids-current-file",
-      name: "Assign missing ids in current metrics file",
+      name: "Assign missing ids in current file",
       checkCallback: (checking) => {
         const file = this.app.workspace.getActiveFile();
         if (!file || !this.isMetricsFile(file)) {
@@ -6395,7 +6434,7 @@ var MetricsPlugin = class extends import_obsidian10.Plugin {
     });
     this.addCommand({
       id: "add-record-current-file",
-      name: "Add record to current metrics file",
+      name: "Add record to current file",
       checkCallback: (checking) => {
         const file = this.app.workspace.getActiveFile();
         if (!file || !this.isMetricsFile(file)) {
@@ -6409,21 +6448,21 @@ var MetricsPlugin = class extends import_obsidian10.Plugin {
     });
     this.addCommand({
       id: "search",
-      name: "Search metrics",
+      name: "Search",
       callback: () => {
         void this.openMetricsSearchModal();
       }
     });
     this.addCommand({
       id: "new-file",
-      name: "New metrics file",
+      name: "New file",
       callback: () => {
         this.openCreateMetricsFileModal();
       }
     });
     this.addCommand({
       id: "rename-current-file",
-      name: "Rename current metrics file",
+      name: "Rename current file",
       checkCallback: (checking) => {
         const file = this.app.workspace.getActiveFile();
         if (!file || !this.isMetricsFile(file)) {
@@ -6437,7 +6476,7 @@ var MetricsPlugin = class extends import_obsidian10.Plugin {
     });
     this.addCommand({
       id: "delete-current-file",
-      name: "Delete current metrics file",
+      name: "Delete current file",
       checkCallback: (checking) => {
         const file = this.app.workspace.getActiveFile();
         if (!file || !this.isMetricsFile(file)) {
@@ -6451,9 +6490,9 @@ var MetricsPlugin = class extends import_obsidian10.Plugin {
     });
     this.addCommand({
       id: "open-view",
-      name: "Open metrics view",
-      callback: async () => {
-        await this.activateView();
+      name: "Open view",
+      callback: () => {
+        void this.activateView();
       }
     });
     this.addSettingTab(new MetricsSettingTab(this.app, this));
@@ -6471,7 +6510,7 @@ var MetricsPlugin = class extends import_obsidian10.Plugin {
     this.registerEvent(
       this.app.workspace.on("layout-change", () => {
         const file = this.app.workspace.getActiveFile();
-        this.queueAutoOpen(file, this.app.workspace.activeLeaf);
+        this.queueAutoOpen(file, this.activeFileLeaf());
         this.refreshFileExplorerObservers();
         this.queueFileExplorerLabelSync();
       })
@@ -6526,18 +6565,21 @@ var MetricsPlugin = class extends import_obsidian10.Plugin {
     );
     this.app.workspace.onLayoutReady(() => {
       const activeFile = this.app.workspace.getActiveFile();
-      this.queueAutoOpen(activeFile, this.app.workspace.activeLeaf);
+      this.queueAutoOpen(activeFile, this.activeFileLeaf());
       this.refreshFileExplorerObservers();
       this.queueFileExplorerLabelSync();
     });
   }
-  async onunload() {
+  onunload() {
     if (this.persistViewStateTimer !== null) {
       window.clearTimeout(this.persistViewStateTimer);
       this.persistViewStateTimer = null;
-      await this.saveSettings();
+      void this.saveSettings();
     }
     this.fileExplorerRelabelController.disconnect();
+    void this.restoreMetricsLeavesOnUnload();
+  }
+  async restoreMetricsLeavesOnUnload() {
     for (const leaf of this.app.workspace.getLeavesOfType(METRICS_VIEW_TYPE)) {
       const view = leaf.view;
       if (!(view instanceof MetricsFileView) || !view.file) {
@@ -6632,7 +6674,7 @@ var MetricsPlugin = class extends import_obsidian10.Plugin {
   async activateView() {
     const activeFile = this.app.workspace.getActiveFile();
     if (activeFile && this.isMetricsFile(activeFile)) {
-      await this.openMetricsFile(activeFile, this.app.workspace.activeLeaf);
+      await this.openMetricsFile(activeFile, this.navigationLeaf());
       return;
     }
     const existingLeaf = this.app.workspace.getLeavesOfType(METRICS_VIEW_TYPE)[0];
@@ -6644,7 +6686,7 @@ var MetricsPlugin = class extends import_obsidian10.Plugin {
       type: METRICS_VIEW_TYPE,
       active: true
     });
-    this.app.workspace.revealLeaf(leaf);
+    await this.app.workspace.revealLeaf(leaf);
   }
   refreshOpenMetricsViews(filePaths) {
     const targetPaths = filePaths ? new Set(filePaths.map((path) => (0, import_obsidian10.normalizePath)(path))) : null;
@@ -6820,10 +6862,7 @@ var MetricsPlugin = class extends import_obsidian10.Plugin {
     }
   }
   confirmDeleteRecord(file, record) {
-    if (!window.confirm(`Delete ${record.key} (${record.id}) from ${file.name}?`)) {
-      return;
-    }
-    void this.deleteRecord(file, record.id);
+    new ConfirmDeleteMetricRecordModal(this, file, record).open();
   }
   async createMetricsFile(input) {
     try {
@@ -6836,7 +6875,7 @@ var MetricsPlugin = class extends import_obsidian10.Plugin {
       await this.ensureParentFolder(path);
       const file = await this.app.vault.create(path, "");
       new import_obsidian10.Notice(`Created ${file.path}.`);
-      const targetLeaf = this.app.workspace.getLeavesOfType(METRICS_VIEW_TYPE)[0] ?? this.app.workspace.getRightLeaf(false) ?? this.app.workspace.activeLeaf;
+      const targetLeaf = this.app.workspace.getLeavesOfType(METRICS_VIEW_TYPE)[0] ?? this.app.workspace.getRightLeaf(false) ?? this.app.workspace.getLeaf(false);
       await this.openMetricsFile(
         file,
         targetLeaf
@@ -6869,15 +6908,18 @@ var MetricsPlugin = class extends import_obsidian10.Plugin {
     }
   }
   confirmDeleteMetricsFile(file) {
-    if (!window.confirm(`Delete ${file.name}?`)) {
+    void this.confirmAndDeleteMetricsFile(file);
+  }
+  async confirmAndDeleteMetricsFile(file) {
+    if (!await this.app.fileManager.promptForDeletion(file)) {
       return;
     }
-    void this.deleteMetricsFile(file);
+    await this.deleteMetricsFile(file);
   }
   async deleteMetricsFile(file) {
     try {
       const path = file.path;
-      await this.app.vault.trash(file, true);
+      await this.app.fileManager.trashFile(file);
       this.forgetPersistedViewStateForPath(path);
       await this.resetDeletedMetricsLeaves(path);
       new import_obsidian10.Notice(`Deleted ${path}.`);
@@ -6910,7 +6952,7 @@ var MetricsPlugin = class extends import_obsidian10.Plugin {
         leaf.view.focusMetricLineNumber(result.lineNumber);
       }
     }
-    this.app.workspace.revealLeaf(leaf);
+    await this.app.workspace.revealLeaf(leaf);
   }
   handleMutationError(error) {
     if (error instanceof MetricsMutationError) {
@@ -6974,14 +7016,6 @@ var MetricsPlugin = class extends import_obsidian10.Plugin {
     }
     return relativePath;
   }
-  relativeMetricsFolderPath(path) {
-    const relativePath = this.relativeMetricsPath(path);
-    const separatorIndex = relativePath.lastIndexOf("/");
-    if (separatorIndex === -1) {
-      return "";
-    }
-    return relativePath.slice(0, separatorIndex + 1);
-  }
   async ensureParentFolder(path) {
     const parentPath = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
     if (parentPath.length === 0) {
@@ -7008,6 +7042,7 @@ var MetricsPlugin = class extends import_obsidian10.Plugin {
     await this.app.vault.createFolder(normalizedPath);
   }
   async resetDeletedMetricsLeaves(path) {
+    const activeLeaf = this.activeFileLeaf();
     const leaves = this.app.workspace.getLeavesOfType(METRICS_VIEW_TYPE);
     for (const leaf of leaves) {
       const view = leaf.view;
@@ -7015,7 +7050,7 @@ var MetricsPlugin = class extends import_obsidian10.Plugin {
         continue;
       }
       await leaf.setViewState({
-        active: leaf === this.app.workspace.activeLeaf,
+        active: leaf === activeLeaf,
         type: METRICS_VIEW_TYPE
       });
     }
@@ -7074,7 +7109,7 @@ var MetricsPlugin = class extends import_obsidian10.Plugin {
     if (existingMetricsLeaf) {
       return existingMetricsLeaf;
     }
-    return this.app.workspace.getRightLeaf(false) ?? this.app.workspace.activeLeaf;
+    return this.app.workspace.getRightLeaf(false) ?? this.app.workspace.getLeaf(false);
   }
   async maybeAutoOpenFile(file, leaf) {
     if (!file || !this.isMetricsFile(file)) {
@@ -7084,7 +7119,7 @@ var MetricsPlugin = class extends import_obsidian10.Plugin {
       this.suppressedAutoOpenPaths.delete(file.path);
       return;
     }
-    const targetLeaf = leaf ?? this.findLeafShowingFile(file) ?? this.app.workspace.activeLeaf;
+    const targetLeaf = leaf ?? this.findLeafShowingFile(file) ?? this.activeFileLeaf();
     if (!targetLeaf || targetLeaf.view.getViewType() === METRICS_VIEW_TYPE) {
       return;
     }
@@ -7118,6 +7153,12 @@ var MetricsPlugin = class extends import_obsidian10.Plugin {
     }
     return leaf.view instanceof import_obsidian10.FileView ? leaf.view.file ?? null : null;
   }
+  activeFileLeaf() {
+    return this.app.workspace.getActiveViewOfType(import_obsidian10.FileView)?.leaf ?? null;
+  }
+  navigationLeaf() {
+    return this.activeFileLeaf() ?? this.app.workspace.getLeaf(false);
+  }
   refreshMetricsViewsForVaultChange(change) {
     const openMetricsViewPaths = collectOpenMetricsViewPaths(
       this.app.workspace.getLeavesOfType(METRICS_VIEW_TYPE)
@@ -7134,7 +7175,7 @@ var MetricsPlugin = class extends import_obsidian10.Plugin {
   }
   refreshFileExplorerObservers() {
     this.fileExplorerRelabelController.observeRoots(
-      document.querySelectorAll(".nav-files-container")
+      activeDocument.querySelectorAll(".nav-files-container")
     );
   }
   queueFileExplorerLabelSync() {

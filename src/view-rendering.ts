@@ -6,7 +6,6 @@ import { displayMetricName } from "./metric-catalog";
 import { metricIconForKey } from "./metric-icons";
 import {
   formatMetricDisplayValue,
-  rawValuePrecision,
   resolveMetricFractionDigits,
 } from "./metric-value-format";
 import type { ParsedMetricRow } from "./metrics-file-model";
